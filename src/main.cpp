@@ -46,7 +46,6 @@ enum State {
   STATE_INFO,
   STATE_WIFI_SCAN,
   STATE_BT_SCAN,
-  STATE_TOUCH_TEST,
   STATE_BRIGHTNESS,
   STATE_BT_LIST,
   STATE_BT_DEVICE_INFO
@@ -54,9 +53,8 @@ enum State {
 
 State currentState = STATE_HOME;
 int menuIndex = 0;
-const int menuCount = 5;
-const char *menuItems[] = {"SYS INFO", "WIFI SCAN", "BT SCAN", "TOUCH TEST",
-                           "BRIGHTNESS"};
+const int menuCount = 4;
+const char *menuItems[] = {"SYS INFO", "WIFI SCAN", "BT SCAN", "BRIGHTNESS"};
 
 // Forward declarations
 void drawTopBar();
@@ -462,27 +460,18 @@ void drawMenu(bool fullRedraw = true) {
     gfx->drawLine(0, 40, 320, 40, WHITE);
     gfx->setFont(&FreeSans18pt7b);
     gfx->setTextColor(CYAN, BLACK);
-    gfx->setCursor(10, 95);
-    gfx->print("<");
-    gfx->setCursor(290, 95);
-    gfx->print(">");
+    gfx->fillTriangle(10, 100, 25, 90, 25, 110, CYAN);
+    gfx->fillTriangle(310, 100, 295, 90, 295, 110, CYAN);
   }
   gfx->fillRect(40, 50, 240, 60, BLACK);
   gfx->setFont(&FreeSans18pt7b);
   gfx->setTextColor(WHITE, BLACK);
   gfx->setTextSize(1);
-  int textWidth = strlen(menuItems[menuIndex]) * 18;
-  int textX = (320 - textWidth) / 2;
-  if (menuIndex == 0)
-    textX = 85;
-  else if (menuIndex == 1)
-    textX = 70;
-  else if (menuIndex == 2)
-    textX = 90;
-  else if (menuIndex == 3)
-    textX = 60;
-  else if (menuIndex == 4)
-    textX = 50;
+  int textX = 160 - (strlen(menuItems[menuIndex]) * 9); 
+  if (menuIndex == 0) textX = 85;
+  else if (menuIndex == 1) textX = 70;
+  else if (menuIndex == 2) textX = 90;
+  else if (menuIndex == 3) textX = 60;
   gfx->setCursor(textX, 95);
   gfx->print(menuItems[menuIndex]);
 }
@@ -706,27 +695,23 @@ void showBTList(bool fullRedraw) {
     gfx->setCursor(100, 35);
     gfx->println("BT DEVICES");
     gfx->drawLine(0, 40, 320, 40, WHITE);
-    gfx->setFont(&FreeSans18pt7b);
-    gfx->setTextColor(CYAN, BLACK);
-    gfx->setCursor(10, 95);
-    gfx->print("<");
-    gfx->setCursor(290, 95);
-    gfx->print(">");
-    gfx->drawRect(20, 110, 130, 35, GREEN);
-    gfx->fillRect(22, 112, 126, 31, BLACK);
+    gfx->fillTriangle(10, 70, 20, 62, 20, 78, CYAN);
+    gfx->fillTriangle(310, 70, 300, 62, 300, 78, CYAN);
+    gfx->fillRoundRect(20, 106, 130, 43, 8, GREEN);
+    gfx->fillRoundRect(22, 108, 126, 39, 6, BLACK);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(GREEN, BLACK);
     gfx->setTextSize(1);
-    gfx->setCursor(42, 133);
+    gfx->setCursor(42, 134);
     gfx->print("CONNECT");
-    gfx->drawRect(170, 110, 130, 35, CYAN);
-    gfx->fillRect(172, 112, 126, 31, BLACK);
+    gfx->fillRoundRect(170, 106, 130, 43, 8, CYAN);
+    gfx->fillRoundRect(172, 108, 126, 39, 6, BLACK);
     gfx->setTextColor(CYAN, BLACK);
     gfx->setTextSize(1);
-    gfx->setCursor(195, 133);
+    gfx->setCursor(195, 134);
     gfx->print("DETAILS");
   }
-  gfx->fillRect(30, 50, 260, 40, BLACK);
+  gfx->fillRect(30, 45, 260, 45, BLACK);
   if (btTotalDevices == 0) {
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(RED, BLACK);
@@ -738,27 +723,35 @@ void showBTList(bool fullRedraw) {
     gfx->setTextColor(WHITE, BLACK);
     gfx->setFont(&FreeSans12pt7b);
     gfx->setTextSize(1);
+
+    // Szöveg görgetése ha túl hosszú
     int charWidth = 12;
-    int textWidth = dev.name.length() * charWidth;
+    String nameToDraw = dev.name;
+    int maxChars = 18;
+    if (nameToDraw.length() > maxChars) {
+      int offset = (millis() / 400) % (nameToDraw.length() - maxChars + 6);
+      if (offset > nameToDraw.length() - maxChars) offset = nameToDraw.length() - maxChars; // Pause at end
+      nameToDraw = nameToDraw.substring(offset, offset + maxChars);
+    }
+    int textWidth = nameToDraw.length() * charWidth;
     int textX = (320 - textWidth) / 2;
-    if (textX < 30)
-      textX = 30;
+    if (textX < 30) textX = 30;
     gfx->setCursor(textX, 75);
-    gfx->print(dev.name.c_str());
+    gfx->print(nameToDraw.c_str());
 
     if (isBluetoothConnected && btSelectedDeviceIndex == 0) {
-      gfx->fillRect(22, 112, 126, 31, GREEN);
+      gfx->fillRoundRect(22, 108, 126, 39, 6, GREEN);
       gfx->setFont(&FreeSans9pt7b);
       gfx->setTextColor(BLACK, GREEN);
       gfx->setTextSize(1);
-      gfx->setCursor(35, 133);
+      gfx->setCursor(35, 134);
       gfx->print("CONNECTED");
     } else {
-      gfx->fillRect(22, 112, 126, 31, BLACK);
+      gfx->fillRoundRect(22, 108, 126, 39, 6, BLACK);
       gfx->setFont(&FreeSans9pt7b);
       gfx->setTextColor(GREEN, BLACK);
       gfx->setTextSize(1);
-      gfx->setCursor(42, 133);
+      gfx->setCursor(42, 134);
       gfx->print("CONNECT");
     }
 
@@ -808,21 +801,6 @@ void showBTDeviceInfo() {
   }
 }
 
-void startTouchTest() {
-  gfx->fillScreen(BLACK);
-  drawTopBar();
-  gfx->setFont(&FreeSans12pt7b);
-  gfx->setTextColor(YELLOW);
-  gfx->setTextSize(1);
-  gfx->setCursor(100, 35);
-  gfx->println("TOUCH TEST");
-  gfx->drawLine(0, 40, 320, 40, WHITE);
-  gfx->setFont(&FreeSans9pt7b);
-  gfx->setTextColor(CYAN);
-  gfx->setTextSize(1);
-  gfx->setCursor(10, 165);
-  gfx->println("Swipe Right -> Back");
-}
 
 class MyClientCallbacks : public NimBLEClientCallbacks {
   void onConnect(NimBLEClient *client) {
@@ -1329,9 +1307,6 @@ void loop() {
                 currentState = STATE_BT_SCAN;
                 runBLEScan();
               } else if (menuIndex == 3) {
-                currentState = STATE_TOUCH_TEST;
-                startTouchTest();
-              } else if (menuIndex == 4) {
                 currentState = STATE_BRIGHTNESS;
                 showBrightness();
               }
@@ -1351,13 +1326,24 @@ void loop() {
                 showBTDeviceInfo();
               }
             }
-          } else if (currentState != STATE_TOUCH_TEST) {
+          } else {
             currentState = STATE_MENU;
             drawMenu();
           }
         }
       }
       touching = false;
+    }
+  }
+
+  // Auto-scroll update for BT List
+  if (currentState == STATE_BT_LIST && btTotalDevices > 0) {
+    if (btDevices[btSelectedDeviceIndex].name.length() > 18) {
+      static unsigned long lastMarqueeUpdate = 0;
+      if (millis() - lastMarqueeUpdate > 400) {
+        lastMarqueeUpdate = millis();
+        showBTList(false); // Update only the dynamic region
+      }
     }
   }
 
