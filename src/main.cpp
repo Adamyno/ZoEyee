@@ -96,6 +96,7 @@ volatile bool bleDisconnectedFlag = false; // Set by callback, checked by loop()
 struct CachedDevice {
   String name;
   String address;
+  NimBLEAddress bleAddress; // Store full address object for correct type (Public/Random)
   int rssi;
 };
 CachedDevice btDevices[MAX_BLE_DEVICES];
@@ -519,30 +520,39 @@ void runBLEScan() {
   // Mivel újra lett inicializálva, a mutatókat is frissíteni kell
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
+  pBLEScan->setDuplicateFilter(false);
   
   // Töröljük a memóriát
   pBLEScan->clearResults();
 
-  Serial.println("[BLE] Szkennelés indítási parancs kiküldve...");
-
-  // A start() visszatérési értékének ellenőrzése (bool)
+  Serial.println("[BLE] Szkennelés indítása...");
+  unsigned long startMillis = millis();
+  
+  // MEGJEGYZÉS: NimBLE 2.x-ben a start() bool-t ad vissza és aszinkron.
   if (pBLEScan->start(scanTime)) {
     Serial.println("[BLE] Rádió aktív, szkennelés folyamatban...");
-    
-    // Mivel a NimBLE 2.x aszinkron, itt várakozunk, amíg a rádió végez
     while (pBLEScan->isScanning()) {
       delay(100);
+      if (millis() - startMillis > (scanTime * 1000 + 2000)) break; // Biztonsági időtúllépés
     }
-    Serial.println("[BLE] Szkennelési idő letelt.");
+    Serial.printf("[BLE] Szkennelés vége %lu ms után.\n", millis() - startMillis);
   } else {
-    Serial.println("[BLE] HIBA: A rádió megtagadta a start() parancsot!");
+    Serial.println("[BLE] HIBA: pBLEScan->start() sikertelen!");
   }
 
-  // Eredmények lekérdezése
   NimBLEScanResults foundDevices = pBLEScan->getResults();
   btTotalDevices = foundDevices.getCount();
   
-  Serial.printf("[BLE] Feldolgozott eszközök száma: %d\n", btTotalDevices);
+  if (btTotalDevices > MAX_BLE_DEVICES) btTotalDevices = MAX_BLE_DEVICES;
+
+  for (int i = 0; i < btTotalDevices; i++) {
+    const NimBLEAdvertisedDevice* device = foundDevices.getDevice(i);
+    btDevices[i].name = device->getName().length() > 0 ? device->getName().c_str() : "Unknown Device";
+    btDevices[i].address = device->getAddress().toString().c_str();
+    btDevices[i].bleAddress = device->getAddress(); // Tároljuk a teljes címet a típus miatt
+    btDevices[i].rssi = device->getRSSI();
+    Serial.printf("[BLE] #%d: %s [%s] RSSI: %d\n", i, btDevices[i].name.c_str(), btDevices[i].address.c_str(), btDevices[i].rssi);
+  }
   
   // Cap at max devices
   if (btTotalDevices > MAX_BLE_DEVICES) btTotalDevices = MAX_BLE_DEVICES;
@@ -794,54 +804,47 @@ bool connectToOBD(int deviceIndex) {
   pClient = NimBLEDevice::createClient();
   pClient->setClientCallbacks(new MyClientCallbacks());
   
-  // Connect
-  if (!pClient->connect(NimBLEAddress(std::string(address.c_str()), 0))) {
+  // Csatlakozás a tárolt cím objektummal (fontos a Public/Random típus miatt!)
+  NimBLEAddress targetAddr = btDevices[deviceIndex].bleAddress;
+  Serial.printf("[BLE] Connecting to: %s [%s]\n", btDevices[deviceIndex].name.c_str(), targetAddr.toString().c_str());
+  
+  if (!pClient->connect(targetAddr)) {
     Serial.println("[BLE] Connection failed!");
     bleConnecting = false;
     return false;
   }
   
-  Serial.println("[BLE] Connected! Discovering services...");
+  Serial.println("[BLE] Connected! Waiting for GATT table...");
+  delay(1000); // HARDVERES FIX: A Konnwei/Vgate adaptereknek kell idő a GATT-hoz
   
-  // Discover services and find TX (Write) / RX (Notify) characteristics
-  // Skip standard BLE services (GAP 0x1800, GATT 0x1801) - they are NOT OBD
+  // TX/RX karakterisztikák keresése
   pTxChar = nullptr;
   pRxChar = nullptr;
   
   const std::vector<NimBLERemoteService*>& services = pClient->getServices(true);
   for (auto pSvc : services) {
-    String svcUUID = String(pSvc->getUUID().toString().c_str());
+    String svcUUID = pSvc->getUUID().toString().c_str();
+    svcUUID.toLowerCase();
     Serial.printf("[BLE] Service: %s\n", svcUUID.c_str());
     
-    // Skip standard services (GAP, GATT, Device Info)
-    if (svcUUID.indexOf("1800") >= 0 || svcUUID.indexOf("1801") >= 0 || svcUUID.indexOf("180a") >= 0) {
-      Serial.println("[BLE]   (Skipping standard service)");
-      continue;
-    }
-    
-    NimBLERemoteCharacteristic* svcTx = nullptr;
-    NimBLERemoteCharacteristic* svcRx = nullptr;
-    
-    const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
-    for (auto pChr : chars) {
-      bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
-      Serial.printf("[BLE]   Char: %s (canWrite=%d, canWriteNR=%d, canNotify=%d)\n", 
-        pChr->getUUID().toString().c_str(), pChr->canWrite(), pChr->canWriteNoResponse(), pChr->canNotify());
+    // Konnwei specifikus szolgáltatások (FFF0 vagy FFE0 keressük)
+    if (svcUUID.indexOf("fff0") >= 0 || svcUUID.indexOf("ffe0") >= 0) {
+      Serial.println("[BLE]   >>> OBD/KONNWEI SZOLGÁLTATÁS MEGTALÁLVA! <<<");
       
-      if (writable && svcTx == nullptr) {
-        svcTx = pChr;
+      const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
+      for (auto pChr : chars) {
+        String charUUID = pChr->getUUID().toString().c_str();
+        charUUID.toLowerCase();
+        
+        bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
+        bool notifiable = pChr->canNotify() || pChr->canIndicate();
+        
+        Serial.printf("[BLE]   Char: %s (Write=%d, Notify=%d)\n", charUUID.c_str(), writable, notifiable);
+        
+        if (writable) pTxChar = pChr;
+        if (notifiable) pRxChar = pChr;
       }
-      if (pChr->canNotify() && svcRx == nullptr) {
-        svcRx = pChr;
-      }
-    }
-    
-    // Prefer a service that has BOTH TX and RX
-    if (svcTx != nullptr && svcRx != nullptr && (pTxChar == nullptr || pRxChar == nullptr)) {
-      pTxChar = svcTx;
-      pRxChar = svcRx;
-      Serial.printf("[BLE]   -> Selected TX: %s\n", pTxChar->getUUID().toString().c_str());
-      Serial.printf("[BLE]   -> Selected RX: %s\n", pRxChar->getUUID().toString().c_str());
+      if (pTxChar && pRxChar) break; // Megvan minden, mehetünk tovább
     }
   }
   
