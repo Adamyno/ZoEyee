@@ -27,7 +27,7 @@
 #define TOUCH_ADDR 0x63
 
 // Software Version
-#define SW_VERSION "v1.2.0-Stable"
+#define SW_VERSION "v1.2.1-Stable"
 
 // Color definitions (RGB 565)
 #define BLACK   0x0000
@@ -294,7 +294,7 @@ void runWifiScan() {
 void showBTList(bool fullRedraw = true);
 
 // =================================================================================
-// 1. MEGOLDÁS: A 100ms-es szkennelési megszakadás javítása C6-specifikus paraméterekkel
+// 1. Szkennelés stabilitása (A Wi-Fi figyelmeztetés elfedésével)
 // =================================================================================
 void runBLEScan() {
   gfx->fillScreen(BLACK); drawTopBar();
@@ -305,13 +305,14 @@ void runBLEScan() {
 
   Serial.println("[BLE] Felkészülés a szkennelésre...");
 
-  // 1. WiFi lekapcsolása (teljes antenna felszabadítás)
-  WiFi.scanDelete(); 
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  delay(300); 
+  // Csak akkor hívjuk meg a leválasztást, ha a Wi-Fi fut, hogy ne dobjon piros hibaüzenetet
+  if (WiFi.getMode() != WIFI_OFF) {
+    WiFi.scanDelete(); 
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    delay(300); 
+  }
 
-  // 2. NimBLE újraindítása (Radio Wakeup fix for C6)
   NimBLEDevice::deinit(true); 
   delay(300);
   NimBLEDevice::init("ZoEyee-Scanner");
@@ -319,8 +320,8 @@ void runBLEScan() {
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
   pBLEScan->setDuplicateFilter(false);
-  pBLEScan->setInterval(100); // 62.5ms interval
-  pBLEScan->setWindow(60);    // 37.5ms window (Safer for C6 arbiter)
+  pBLEScan->setInterval(100); 
+  pBLEScan->setWindow(60);    
   
   pBLEScan->clearResults();
 
@@ -328,12 +329,12 @@ void runBLEScan() {
   Serial.flush();
   unsigned long startMillis = millis();
   
-  if (pBLEScan->start(scanTime, false, true)) { 
+  if (pBLEScan->start(scanTime * 1000, false, true)) { 
     Serial.println("[BLE] Rádió aktív, szkennelés folyamatban...");
-    delay(200); // Várjunk egy kicsit, hogy beálljon az isScanning()
+    delay(200); 
     while (pBLEScan->isScanning()) {
       delay(100);
-      if (millis() - startMillis > (scanTime * 1000 + 4000)) break; // Safety timeout (+4s margin)
+      if (millis() - startMillis > (scanTime * 1000 + 4000)) break; 
     }
     Serial.printf("[BLE] Szkennelés vége %lu ms után.\n", millis() - startMillis);
     Serial.flush();
@@ -464,7 +465,7 @@ void sendOBDCommand(const char* cmd) {
 }
 
 // =================================================================================
-// 2. MEGOLDÁS: A Konnwei/ELM327 csatlakozási paramétereinek és időzítésének fixálása
+// 2. MEGOLDÁS: Lassú, biztonságos kapcsolati paraméterek a klónokhoz!
 // =================================================================================
 bool connectToOBD(int deviceIndex) {
   if (deviceIndex < 0 || deviceIndex >= btTotalDevices) return false;
@@ -485,9 +486,11 @@ bool connectToOBD(int deviceIndex) {
   pClient = NimBLEDevice::createClient();
   pClient->setClientCallbacks(new MyClientCallbacks());
 
-  // ERŐSÍTETT PARAMÉTEREK KÍNAI ADAPTEREKHEZ: Timeout megemelése, és gyors csatlakozási ablak kérése
-  pClient->setConnectTimeout(5);
-  pClient->setConnectionParams(12, 12, 0, 51);
+  // BIZTONSÁGOS PARAMÉTEREK KÍNAI ADAPTEREKHEZ: 
+  // 40ms - 100ms intervallum, és ami a legfontosabb: 5000ms supervision timeout!
+  // Ez megakadályozza, hogy az ESP32 azonnal eldobja a kapcsolatot (Reason 534)
+  pClient->setConnectTimeout(5000); 
+  pClient->setConnectionParams(32, 80, 0, 500);
   
   if (!pClient->connect(targetAddr)) {
     Serial.println("[BLE] Kapcsolódás sikertelen!");
