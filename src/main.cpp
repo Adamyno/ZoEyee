@@ -517,39 +517,58 @@ bool connectToOBD(int deviceIndex) {
     Serial.printf("[BLE] Látott szolgáltatás: %s\n", svcUUID.c_str());
     
     // Kifejezetten a Konnwei adatcsatornáját (FFF0 / FFE0) keressük
-    if (svcUUID.indexOf("fff0") >= 0 || svcUUID.indexOf("ffe0") >= 0) {
-      Serial.println("[BLE]   >>> OBD/KONNWEI SZOLGÁLTATÁS MEGTALÁLVA! <<<");
-      const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
-      for (auto pChr : chars) {
-        String charUUID = pChr->getUUID().toString().c_str(); charUUID.toLowerCase();
-        bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
-        bool notifiable = pChr->canNotify() || pChr->canIndicate();
-        Serial.printf("[BLE]   Karakterisztika: %s (Write=%d, Notify=%d)\n", charUUID.c_str(), writable, notifiable);
-        
-        if (writable) pTxChar = pChr;
-        if (notifiable) pRxChar = pChr;
-      }
-      if (pTxChar && pRxChar) break; 
+  // FFF0, FFE0 vagy AE30 keresése
+  if (svcUUID.indexOf("fff0") >= 0 || svcUUID.indexOf("ffe0") >= 0 || svcUUID.indexOf("ae30") >= 0) {
+    Serial.printf("[BLE]   >>> OBD/KONNWEI SZOLGÁLTATÁS MEGTALÁLVA (%s)! <<<\n", svcUUID.c_str());
+    const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
+    for (auto pChr : chars) {
+      String charUUID = pChr->getUUID().toString().c_str(); charUUID.toLowerCase();
+      bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
+      bool notifiable = pChr->canNotify() || pChr->canIndicate();
+      Serial.printf("[BLE]   Karakterisztika: %s (Write=%d, Notify=%d)\n", charUUID.c_str(), writable, notifiable);
+      
+      if (writable && pTxChar == nullptr) pTxChar = pChr;
+      if (notifiable && pRxChar == nullptr) pRxChar = pChr;
+    }
+    if (pTxChar && pRxChar) break; 
+  }
+}
+
+// Fallback: Ha nem találunk UUID-t, próbáljuk meg bármivel ami TX/RX képes
+if (pTxChar == nullptr || pRxChar == nullptr) {
+  for (auto pSvc : services) {
+    const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
+    for (auto pChr : chars) {
+      if ((pChr->canWrite() || pChr->canWriteNoResponse()) && pTxChar == nullptr) pTxChar = pChr;
+      if (pChr->canNotify() && pRxChar == nullptr) pRxChar = pChr;
+    }
+    if (pTxChar && pRxChar) {
+      Serial.printf("[BLE] Fallback SPP megtalálva a %s szolgáltatásban!\n", pSvc->getUUID().toString().c_str());
+      break;
     }
   }
-  
-  if (pTxChar == nullptr || pRxChar == nullptr) {
-    // Fallback: Ha nem találunk Konnwei-specifikus UUID-t, próbáljuk meg bármivel ami TX/RX képes
-    for (auto pSvc : services) {
-       if (pTxChar && pRxChar) break;
-       const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
-       for (auto pChr : chars) {
-         if (pChr->canWrite() || pChr->canWriteNoResponse()) pTxChar = pChr;
-         if (pChr->canNotify()) pRxChar = pChr;
-         if (pTxChar && pRxChar) break;
-       }
-    }
+}
+
+if (pTxChar == nullptr || pRxChar == nullptr) {
+  Serial.println("[BLE] HIBA: Nem találom a TX/RX csatornákat!");
+  gfx->fillRect(30, 50, 260, 60, BLACK); gfx->setFont(&FreeSans12pt7b); gfx->setTextColor(RED, BLACK);
+  gfx->setTextSize(1); gfx->setCursor(40, 75); gfx->print("No OBD service found!");
+  delay(2000); disconnectOBD(); return false;
+}
+
+// Subscribe és explicite CCCD bekapcsolása a lusta klónokhoz
+if (pRxChar->canNotify()) {
+  pRxChar->subscribe(true, onBLENotify);
+  delay(200);
+  NimBLERemoteDescriptor* p2902 = pRxChar->getDescriptor(NimBLEUUID((uint16_t)0x2902));
+  if (p2902 != nullptr) {
+    uint8_t notifyOn[] = {0x01, 0x00};
+    p2902->writeValue(notifyOn, 2, true);
+    Serial.println("[BLE]   >>> CCCD (2902) Descriptor manuálisan engedélyezve! <<<");
+  } else {
+    Serial.println("[BLE]   >>> FIGYELEM: Nincs 2902 CCCD Descriptor! <<<");
   }
-  
-  if (pTxChar == nullptr || pRxChar == nullptr) {
-    Serial.println("[BLE] HIBA: Nem találom a TX/RX csatornákat!");
-    pClient->disconnect(); bleConnecting = false; return false;
-  }
+}
   
   pRxChar->subscribe(true, onBLENotify);
   isBluetoothConnected = true; bleConnecting = false;
