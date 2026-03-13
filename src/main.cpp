@@ -120,6 +120,7 @@ int btSelectedDeviceIndex = -1;
 int lastX = -1, lastY = -1;
 int startX = -1, startY = -1;
 bool touching = false;
+bool isSwipingBrightness = false;
 unsigned long touchStartTime = 0;
 
 // Set up raw touch storage for debugging
@@ -849,7 +850,7 @@ void onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData,
       // az első értékes sort vesszük válasznak.
       obdBuffer[obdBufIndex] = '\0';
 
-      String bestLine = "";
+      String fullResponse = "";
       char *ptr = obdBuffer;
       while (*ptr) {
         // Sor kiemelése
@@ -878,21 +879,37 @@ void onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData,
 
         String lineUpper = line;
         lineUpper.toUpperCase();
+        
         // Echo sor: pontosan egy AT parancs (pl. "ATZ" vagy "ATE0") → skip
         if (lineUpper.startsWith("AT") && lineUpper.indexOf(' ') < 0 &&
             lineUpper.length() <= 6)
           continue;
 
-        bestLine = line;
-        break; // Első értékes sor
+        // ISO-TP Multi-frame hosszak és prefixek szűrése
+        // Ha csak 3 karakter és nincs benne szóköz, az valószínűleg a teljes hossz (pl. "00D")
+        if (lineUpper.length() <= 3 && lineUpper.indexOf(' ') < 0) {
+          continue;
+        }
+
+        // Ha a sor "0:", "1:", "2:" stb.-vel kezdődik (ELM327 multi-frame formátum)
+        if (lineUpper.length() >= 2 && lineUpper.charAt(1) == ':') {
+          lineUpper = lineUpper.substring(2);
+          lineUpper.trim();
+        } else if (lineUpper.length() >= 3 && lineUpper.charAt(2) == ':') {
+          lineUpper = lineUpper.substring(3);
+          lineUpper.trim();
+        }
+
+        if (fullResponse.length() > 0) fullResponse += " ";
+        fullResponse += lineUpper;
       }
 
       obdBufIndex = 0;
       obdBuffer[0] = '\0';
-      if (bestLine.length() == 0)
+      if (fullResponse.length() == 0)
         continue; // Semmi hasznos → skip
 
-      lastOBDValue = bestLine;
+      lastOBDValue = fullResponse;
       Serial.printf("[OBD] Response complete: '%s'\n", lastOBDValue.c_str());
     } else if (c != '\n') {
       // '\r'-t is eltároljuk, fontos elválasztóként!
@@ -1210,10 +1227,24 @@ void loop() {
       startX = tx;
       startY = ty;
       touching = true;
+      isSwipingBrightness = false;
       touchStartTime = millis();
     }
     int deltaX = tx - startX;
     int deltaY = ty - startY;
+
+    // Global brightness control via vertical swipe
+    if (abs(deltaY) > 10 && abs(deltaX) < 40) {
+      isSwipingBrightness = true;
+      // UP swipe -> negative deltaY -> increase brightness
+      int newBright = currentBrightness - deltaY; 
+      newBright = constrain(newBright, 0, 255);
+      if (newBright != currentBrightness) {
+        setBrightness(newBright);
+        if (currentState == STATE_BRIGHTNESS) showBrightness(false);
+      }
+      startY = ty; // Reset y coordinate for continuous smooth adjustment
+    }
     if (currentState == STATE_HOME && (millis() - touchStartTime) > 800 &&
         abs(deltaX) < 30 && abs(deltaY) < 30) {
       currentState = STATE_MENU;
@@ -1237,6 +1268,10 @@ void loop() {
     lastY = ty;
   } else {
     if (touching) {
+      if (isSwipingBrightness) {
+        touching = false;
+        return;
+      }
       if (currentState == STATE_HOME) {
         touching = false;
         return;
