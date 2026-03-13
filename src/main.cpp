@@ -122,6 +122,7 @@ int startX = -1, startY = -1;
 bool touching = false;
 bool isSwipingBrightness = false;
 unsigned long touchStartTime = 0;
+unsigned long lastTapTime = 0;
 
 // Set up raw touch storage for debugging
 int lastRawX = 0, lastRawY = 0;
@@ -424,7 +425,7 @@ void showHome() {
 
     // Státusz sor
     gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0x4208); gfx->setTextSize(1);
-    gfx->setCursor(10, 165); gfx->print("Hold to open menu");
+    gfx->setCursor(10, 165); gfx->print("Double tap for menu");
   } else {
     gfx->setFont(&FreeSans18pt7b); gfx->setTextColor(RED); gfx->setTextSize(1);
     gfx->setCursor(35, 90); gfx->print("No Connection");
@@ -1245,25 +1246,6 @@ void loop() {
       }
       startY = ty; // Reset y coordinate for continuous smooth adjustment
     }
-    if (currentState == STATE_HOME && (millis() - touchStartTime) > 800 &&
-        abs(deltaX) < 30 && abs(deltaY) < 30) {
-      currentState = STATE_MENU;
-      drawMenu();
-      touching = false;
-      return;
-    }
-    if (currentState == STATE_BRIGHTNESS) {
-      if (startX >= 120 && startX <= 200) {
-        int newVal = map(ty, 140, 40, 0, 255);
-        newVal = constrain(newVal, 0, 255);
-        if (abs(newVal - currentBrightness) > 2) {
-          setBrightness(newVal);
-          showBrightness(false);
-        }
-      }
-    } else if (currentState == STATE_TOUCH_TEST) {
-      gfx->drawPixel(tx, ty, WHITE);
-    }
     lastX = tx;
     lastY = ty;
   } else {
@@ -1272,13 +1254,24 @@ void loop() {
         touching = false;
         return;
       }
-      if (currentState == STATE_HOME) {
-        touching = false;
-        return;
-      }
       int deltaX = lastX - startX;
       int deltaY = lastY - startY;
       unsigned long tapDuration = millis() - touchStartTime;
+
+      if (currentState == STATE_HOME) {
+        if (abs(deltaX) < 30 && abs(deltaY) < 30 && tapDuration < 500) {
+          if (millis() - lastTapTime < 500) {
+            // Double tap!
+            currentState = STATE_MENU;
+            drawMenu();
+            lastTapTime = 0;
+          } else {
+            lastTapTime = millis();
+          }
+        }
+        touching = false;
+        return;
+      }
 
       if (abs(deltaY) < 50 && tapDuration < 500) {
         if (deltaX > 80) {
