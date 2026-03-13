@@ -440,6 +440,12 @@ class MyClientCallbacks : public NimBLEClientCallbacks {
 };
 
 void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+  Serial.print("[OBD] RX RAW: ");
+  for (size_t i = 0; i < length; i++) {
+    Serial.printf("%02X ", pData[i]);
+  }
+  Serial.println();
+
   for (size_t i = 0; i < length; i++) {
     char c = (char)pData[i];
     if (c == '>') {
@@ -449,8 +455,8 @@ void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t lengt
       int len = strlen(start);
       while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\r' || start[len-1] == '\n')) { start[--len] = '\0'; }
       lastOBDValue = String(start); obdBufIndex = 0;
-      Serial.printf("[OBD] Response complete: %s\n", lastOBDValue.c_str());
-    } else if (c != '\r') { 
+      Serial.printf("[OBD] Response complete: '%s'\n", lastOBDValue.c_str());
+    } else if (c != '\r' && c != '\n') { 
       if (obdBufIndex < (int)sizeof(obdBuffer) - 1) obdBuffer[obdBufIndex++] = c;
     }
   }
@@ -458,7 +464,7 @@ void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t lengt
 
 void sendOBDCommand(const char* cmd) {
   if (pTxChar != nullptr && isBluetoothConnected) {
-    char fullCmd[64]; snprintf(fullCmd, sizeof(fullCmd), "%s\r", cmd);
+    char fullCmd[64]; snprintf(fullCmd, sizeof(fullCmd), "%s\r\n", cmd);
     pTxChar->writeValue((uint8_t*)fullCmd, strlen(fullCmd));
     Serial.printf("[OBD] Sent: %s\n", cmd);
   }
