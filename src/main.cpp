@@ -480,7 +480,9 @@ bool connectToOBD(int deviceIndex) {
   Serial.printf("[BLE] Kapcsolódás: %s [%s]\n", btDevices[deviceIndex].name.c_str(), targetAddr.toString().c_str());
   
   if (pClient != nullptr) {
-    pClient->disconnect(); NimBLEDevice::deleteClient(pClient); pClient = nullptr;
+    if (pClient->isConnected()) pClient->disconnect();
+    NimBLEDevice::deleteClient(pClient); pClient = nullptr;
+    delay(200); // Kis szünet, hogy a NimBLE stack és a memória is fellélegezzen
   }
   
   pClient = NimBLEDevice::createClient();
@@ -582,10 +584,18 @@ bool connectToOBD(int deviceIndex) {
 }
 
 void disconnectOBD() {
-  if (pClient != nullptr && pClient->isConnected()) pClient->disconnect();
+  Serial.println("[BLE] Leválasztás kezdeményezése...");
+  if (pClient != nullptr && pClient->isConnected()) {
+    if (pRxChar != nullptr) {
+      pRxChar->unsubscribe(); 
+      delay(100); // Adjunk időt a leiratkozásnak
+    }
+    pClient->disconnect();
+    delay(500); // Kötelező szünet a kínai adaptereknek a bontás feldolgozásához
+  }
   isBluetoothConnected = false; pTxChar = nullptr; pRxChar = nullptr;
   lastOBDValue = ""; obdBufIndex = 0; obdBuffer[0] = '\0';
-  Serial.println("[BLE] Disconnected from OBD");
+  Serial.println("[BLE] Sikeresen leválasztva az OBD-ről.");
 }
 
 void setup(void) {
