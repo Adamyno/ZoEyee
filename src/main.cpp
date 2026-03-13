@@ -504,21 +504,31 @@ void runBLEScan() {
   gfx->setCursor(75, 95); // Shifted Y
   gfx->println("Scanning...");
 
-  // KRITIKUS: WiFi lekapcsolása, hogy a közös antenna felszabaduljon a BLE számára
+  // WiFi lekapcsolása (disconnect), de a módot nem állítjuk OFF-ra,
+  // mert az ESP32-C6-on az lekapcsolná a közös RF PHY rádiót is!
   WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  delay(100); // Hardver átkapcsolási idő
+  delay(100); 
 
-  // Beragadt eredmények törlése
+  // Beragadt eredmények ürítése
   pBLEScan->clearResults();
 
-  // NimBLE 2.x: start() is non-blocking, must wait for scan to complete
-  pBLEScan->start(scanTime);
-  while (pBLEScan->isScanning()) {
-    delay(100);
+  Serial.println("[BLE] Szkennelés indítási parancs kiküldve...");
+
+  // NimBLE 2.x: start() is non-blocking, returns bool if started successfully
+  if (pBLEScan->start(scanTime)) {
+    Serial.println("[BLE] Rádió aktív, szkennelés folyamatban...");
+    while (pBLEScan->isScanning()) {
+      delay(100);
+    }
+    Serial.println("[BLE] Szkennelési idő letelt.");
+  } else {
+    Serial.println("[BLE] HIBA: Az RF hardver megtagadta a szkennelés indítását!");
   }
+
   NimBLEScanResults foundDevices = pBLEScan->getResults();
   btTotalDevices = foundDevices.getCount();
+  
+  Serial.printf("[BLE] Feldolgozott eszközök száma: %d\n", btTotalDevices);
   
   // Cap at max devices
   if (btTotalDevices > MAX_BLE_DEVICES) btTotalDevices = MAX_BLE_DEVICES;
