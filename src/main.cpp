@@ -442,29 +442,49 @@ class MyClientCallbacks : public NimBLEClientCallbacks {
 
 void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
   Serial.print("[OBD] RX RAW: ");
-  for (size_t i = 0; i < length; i++) {
-    Serial.printf("%02X ", pData[i]);
-  }
+  for (size_t i = 0; i < length; i++) Serial.printf("%02X ", pData[i]);
   Serial.println();
 
   for (size_t i = 0; i < length; i++) {
     char c = (char)pData[i];
     if (c == '>') {
+      // Válasz vége: '\r' mentén szétválasztjuk a sorokat, AT echo-t kihagyjuk,
+      // az első értékes sort vesszük válasznak.
       obdBuffer[obdBufIndex] = '\0';
-      char* start = obdBuffer;
-      while (*start == ' ' || *start == '\r' || *start == '\n') start++;
-      int len = strlen(start);
-      while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\r' || start[len-1] == '\n')) { start[--len] = '\0'; }
       
-      // Echo szűrés: ha a válasz ugyanaz, mint egy parancs, dobjuk el (pl. "ATZ" vagy "ATE0")
-      String trimmedResp = String(start);
-      if (trimmedResp.startsWith("AT") || trimmedResp.length() == 0) {
-        obdBufIndex = 0; continue; 
+      String bestLine = "";
+      char* ptr = obdBuffer;
+      while (*ptr) {
+        // Sor kiemelése
+        char* lineStart = ptr;
+        while (*ptr && *ptr != '\r') ptr++;
+        if (*ptr == '\r') { *ptr = '\0'; ptr++; }
+        
+        // Trim
+        char* s = lineStart;
+        while (*s == ' ') s++;
+        int l = strlen(s);
+        while (l > 0 && (s[l-1] == ' ' || s[l-1] == '\n')) s[--l] = '\0';
+        
+        if (strlen(s) == 0) continue;          // Üres sor → skip
+        String line = String(s);
+        line.trim();
+        if (line.length() == 0) continue;
+        
+        String lineUpper = line; lineUpper.toUpperCase();
+        // Echo sor: pontosan egy AT parancs (pl. "ATZ" vagy "ATE0") → skip
+        if (lineUpper.startsWith("AT") && lineUpper.indexOf(' ') < 0 && lineUpper.length() <= 6) continue;
+        
+        bestLine = line; break; // Első értékes sor
       }
       
-      lastOBDValue = trimmedResp; obdBufIndex = 0;
+      obdBufIndex = 0; obdBuffer[0] = '\0';
+      if (bestLine.length() == 0) continue; // Semmi hasznos → skip
+      
+      lastOBDValue = bestLine;
       Serial.printf("[OBD] Response complete: '%s'\n", lastOBDValue.c_str());
-    } else if (c != '\r' && c != '\n') { 
+    } else if (c != '\n') {
+      // '\r'-t is eltároljuk, fontos elválasztóként!
       if (obdBufIndex < (int)sizeof(obdBuffer) - 1) obdBuffer[obdBufIndex++] = c;
     }
   }
