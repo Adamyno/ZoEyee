@@ -504,6 +504,14 @@ void runBLEScan() {
   gfx->setCursor(75, 95); // Shifted Y
   gfx->println("Scanning...");
 
+  // KRITIKUS: WiFi lekapcsolása, hogy a közös antenna felszabaduljon a BLE számára
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(100); // Hardver átkapcsolási idő
+
+  // Beragadt eredmények törlése
+  pBLEScan->clearResults();
+
   // NimBLE 2.x: start() is non-blocking, must wait for scan to complete
   pBLEScan->start(scanTime);
   while (pBLEScan->isScanning()) {
@@ -928,8 +936,8 @@ void setup(void) {
   NimBLEDevice::init("ZoEyee-Scanner");
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
-  pBLEScan->setInterval(100);
-  pBLEScan->setWindow(99);
+  // Nem állítunk be setInterval/setWindow-t — a NimBLE alapértékei
+  // biztonságos duty cycle-t használnak, ami nem ütközik a WiFi-vel
   
   Serial.printf("[SYS] Free heap: %d bytes\n", ESP.getFreeHeap());
 }
