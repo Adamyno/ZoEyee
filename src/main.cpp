@@ -1,10 +1,6 @@
 #include <Arduino_GFX_Library.h>
 #include <WiFi.h>
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEScan.h>
-#include <BLEAdvertisedDevice.h>
-#include <BLEClient.h>
+#include <NimBLEDevice.h>
 #include <Wire.h>
 
 #include <Fonts/FreeSans9pt7b.h>
@@ -78,15 +74,18 @@ Arduino_GFX *gfx = new Arduino_ST7789(
 
 // BLE Scan & Connection variables
 int scanTime = 5; 
-BLEScan* pBLEScan;
+NimBLEScan* pBLEScan;
 bool isBluetoothConnected = false;
 bool bleConnecting = false;
 
-// BLE Client
-BLEClient* pClient = nullptr;
-BLERemoteCharacteristic* pTxChar = nullptr; // Write to OBD
-BLERemoteCharacteristic* pRxChar = nullptr; // Notify from OBD
-String obdResponse = "";
+// BLE Client (NimBLE)
+NimBLEClient* pClient = nullptr;
+NimBLERemoteCharacteristic* pTxChar = nullptr; // Write to OBD
+NimBLERemoteCharacteristic* pRxChar = nullptr; // Notify from OBD
+
+// OBD response buffer (static, no heap fragmentation)
+static char obdBuffer[256];
+static int obdBufIndex = 0;
 String lastOBDValue = "";
 unsigned long lastOBDPollTime = 0;
 const unsigned long OBD_POLL_INTERVAL = 1500; // ms between ATRV polls
@@ -505,17 +504,17 @@ void runBLEScan() {
   gfx->setCursor(75, 95); // Shifted Y
   gfx->println("Scanning...");
 
-  BLEScanResults *foundDevices = pBLEScan->start(scanTime, false);
-  btTotalDevices = foundDevices->getCount();
+  NimBLEScanResults foundDevices = pBLEScan->getResults(scanTime, false);
+  btTotalDevices = foundDevices.getCount();
   
   // Cap at max devices
   if (btTotalDevices > MAX_BLE_DEVICES) btTotalDevices = MAX_BLE_DEVICES;
 
   for (int i = 0; i < btTotalDevices; i++) {
-    BLEAdvertisedDevice device = foundDevices->getDevice(i);
-    btDevices[i].name = device.getName().length() > 0 ? device.getName().c_str() : "Unknown Device";
-    btDevices[i].address = device.getAddress().toString().c_str();
-    btDevices[i].rssi = device.getRSSI();
+    const NimBLEAdvertisedDevice* device = foundDevices.getDevice(i);
+    btDevices[i].name = device->getName().length() > 0 ? device->getName().c_str() : "Unknown Device";
+    btDevices[i].address = device->getAddress().toString().c_str();
+    btDevices[i].rssi = device->getRSSI();
   }
   pBLEScan->clearResults(); 
   
@@ -682,12 +681,12 @@ void startTouchTest() {
 // BLE Client Connection Infrastructure
 // ============================================================
 
-class MyClientCallbacks : public BLEClientCallbacks {
-  void onConnect(BLEClient* client) {
-    Serial.println("[BLE] Connected to server");
+class MyClientCallbacks : public NimBLEClientCallbacks {
+  void onConnect(NimBLEClient* client) {
+    Serial.println("[BLE/NimBLE] Connected to server");
   }
-  void onDisconnect(BLEClient* client) {
-    Serial.println("[BLE] Disconnected from server");
+  void onDisconnect(NimBLEClient* client, int reason) {
+    Serial.printf("[BLE/NimBLE] Disconnected (reason=%d)\n", reason);
     isBluetoothConnected = false;
     pTxChar = nullptr;
     pRxChar = nullptr;
@@ -695,18 +694,27 @@ class MyClientCallbacks : public BLEClientCallbacks {
   }
 };
 
-// Notify callback — receives data from OBD adapter
-void onBLENotify(BLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+// Notify callback — receives data from OBD adapter (static buffer, no heap fragmentation)
+void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
   for (size_t i = 0; i < length; i++) {
     char c = (char)pData[i];
     if (c == '>') {
       // '>' is the ELM327 prompt, response is complete
-      obdResponse.trim();
-      lastOBDValue = obdResponse;
-      obdResponse = "";
+      obdBuffer[obdBufIndex] = '\0';
+      // Trim whitespace
+      char* start = obdBuffer;
+      while (*start == ' ' || *start == '\r' || *start == '\n') start++;
+      int len = strlen(start);
+      while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\r' || start[len-1] == '\n')) {
+        start[--len] = '\0';
+      }
+      lastOBDValue = String(start);
+      obdBufIndex = 0;
       Serial.printf("[OBD] Response complete: %s\n", lastOBDValue.c_str());
-    } else {
-      obdResponse += c;
+    } else if (c != '\r') { // Skip \r characters
+      if (obdBufIndex < (int)sizeof(obdBuffer) - 1) {
+        obdBuffer[obdBufIndex++] = c;
+      }
     }
   }
 }
@@ -714,8 +722,9 @@ void onBLENotify(BLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, 
 // Send a command string to the OBD adapter
 void sendOBDCommand(const char* cmd) {
   if (pTxChar != nullptr && isBluetoothConnected) {
-    String fullCmd = String(cmd) + "\r";
-    pTxChar->writeValue(fullCmd.c_str(), fullCmd.length());
+    char fullCmd[64];
+    snprintf(fullCmd, sizeof(fullCmd), "%s\r", cmd);
+    pTxChar->writeValue((uint8_t*)fullCmd, strlen(fullCmd));
     Serial.printf("[OBD] Sent: %s\n", cmd);
   }
 }
@@ -741,16 +750,15 @@ bool connectToOBD(int deviceIndex) {
   // Create client
   if (pClient != nullptr) {
     pClient->disconnect();
-    delete pClient;
+    NimBLEDevice::deleteClient(pClient);
     pClient = nullptr;
   }
   
-  pClient = BLEDevice::createClient();
+  pClient = NimBLEDevice::createClient();
   pClient->setClientCallbacks(new MyClientCallbacks());
   
   // Connect
-  BLEAddress bleAddr(address.c_str());
-  if (!pClient->connect(bleAddr)) {
+  if (!pClient->connect(NimBLEAddress(std::string(address.c_str()), 0))) {
     Serial.println("[BLE] Connection failed!");
     bleConnecting = false;
     return false;
@@ -763,28 +771,27 @@ bool connectToOBD(int deviceIndex) {
   pTxChar = nullptr;
   pRxChar = nullptr;
   
-  std::map<std::string, BLERemoteService*>* services = pClient->getServices();
-  for (auto& svcPair : *services) {
-    BLERemoteService* pSvc = svcPair.second;
-    String svcUUID = pSvc->getUUID().toString().c_str();
+  const std::vector<NimBLERemoteService*>& services = pClient->getServices(true);
+  for (auto pSvc : services) {
+    String svcUUID = String(pSvc->getUUID().toString().c_str());
     Serial.printf("[BLE] Service: %s\n", svcUUID.c_str());
     
-    // Skip standard services
-    if (svcUUID.indexOf("00001800") >= 0 || svcUUID.indexOf("00001801") >= 0) {
-      Serial.println("[BLE]   (Skipping standard GAP/GATT service)");
+    // Skip standard services (GAP, GATT, Device Info)
+    if (svcUUID.indexOf("1800") >= 0 || svcUUID.indexOf("1801") >= 0 || svcUUID.indexOf("180a") >= 0) {
+      Serial.println("[BLE]   (Skipping standard service)");
       continue;
     }
     
-    BLERemoteCharacteristic* svcTx = nullptr;
-    BLERemoteCharacteristic* svcRx = nullptr;
+    NimBLERemoteCharacteristic* svcTx = nullptr;
+    NimBLERemoteCharacteristic* svcRx = nullptr;
     
-    std::map<std::string, BLERemoteCharacteristic*>* chars = pSvc->getCharacteristics();
-    for (auto& charPair : *chars) {
-      BLERemoteCharacteristic* pChr = charPair.second;
-      Serial.printf("[BLE]   Char: %s (canWrite=%d, canNotify=%d)\n", 
-        pChr->getUUID().toString().c_str(), pChr->canWrite(), pChr->canNotify());
+    const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
+    for (auto pChr : chars) {
+      bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
+      Serial.printf("[BLE]   Char: %s (canWrite=%d, canWriteNR=%d, canNotify=%d)\n", 
+        pChr->getUUID().toString().c_str(), pChr->canWrite(), pChr->canWriteNoResponse(), pChr->canNotify());
       
-      if (pChr->canWrite() && svcTx == nullptr) {
+      if (writable && svcTx == nullptr) {
         svcTx = pChr;
       }
       if (pChr->canNotify() && svcRx == nullptr) {
@@ -808,15 +815,16 @@ bool connectToOBD(int deviceIndex) {
     return false;
   }
   
-  // Register for notifications
-  pRxChar->registerForNotify(onBLENotify);
+  // Subscribe to notifications (NimBLE API)
+  pRxChar->subscribe(true, onBLENotify);
   
   isBluetoothConnected = true;
   bleConnecting = false;
   
   // === ELM327 Identity Validation ===
   // Send ATZ (reset) and wait for response containing "ELM"
-  obdResponse = "";
+  obdBufIndex = 0;
+  obdBuffer[0] = '\0';
   lastOBDValue = "";
   
   gfx->fillRect(30, 50, 260, 40, BLACK);
@@ -882,7 +890,8 @@ void disconnectOBD() {
   pTxChar = nullptr;
   pRxChar = nullptr;
   lastOBDValue = "";
-  obdResponse = "";
+  obdBufIndex = 0;
+  obdBuffer[0] = '\0';
   Serial.println("[BLE] Disconnected from OBD");
 }
 
@@ -910,12 +919,14 @@ void setup(void) {
   // Start with Home Screen
   showHome();
   
-  // Init BLE
-  BLEDevice::init("ZoEyee-Scanner");
-  pBLEScan = BLEDevice::getScan();
+  // Init BLE (NimBLE - lightweight stack, ~5KB RAM vs ~100KB Bluedroid)
+  NimBLEDevice::init("ZoEyee-Scanner");
+  pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
   pBLEScan->setInterval(100);
   pBLEScan->setWindow(99);
+  
+  Serial.printf("[SYS] Free heap: %d bytes\n", ESP.getFreeHeap());
 }
 
 void loop() {
