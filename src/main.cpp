@@ -455,7 +455,14 @@ void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t lengt
       while (*start == ' ' || *start == '\r' || *start == '\n') start++;
       int len = strlen(start);
       while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\r' || start[len-1] == '\n')) { start[--len] = '\0'; }
-      lastOBDValue = String(start); obdBufIndex = 0;
+      
+      // Echo szűrés: ha a válasz ugyanaz, mint egy parancs, dobjuk el (pl. "ATZ" vagy "ATE0")
+      String trimmedResp = String(start);
+      if (trimmedResp.startsWith("AT") || trimmedResp.length() == 0) {
+        obdBufIndex = 0; continue; 
+      }
+      
+      lastOBDValue = trimmedResp; obdBufIndex = 0;
       Serial.printf("[OBD] Response complete: '%s'\n", lastOBDValue.c_str());
     } else if (c != '\r' && c != '\n') { 
       if (obdBufIndex < (int)sizeof(obdBuffer) - 1) obdBuffer[obdBufIndex++] = c;
@@ -495,66 +502,91 @@ bool connectToOBD(int deviceIndex) {
   pClient = NimBLEDevice::createClient();
   pClient->setClientCallbacks(new MyClientCallbacks());
 
-  // BIZTONSÁGOS PARAMÉTEREK KÍNAI ADAPTEREKHEZ: 
-  // 40ms - 100ms intervallum, és ami a legfontosabb: 5000ms supervision timeout!
-  // Ez megakadályozza, hogy az ESP32 azonnal eldobja a kapcsolatot (Reason 534)
-  pClient->setConnectTimeout(5000); 
+  // KLÓN-KOMPATIBILIS PARAMÉTEREK (Konnwei/Vgate)
+  // Interval: 40ms - 100ms (32 - 80), Latency: 0, Timeout: 5000ms (500)
   pClient->setConnectionParams(32, 80, 0, 500);
+  pClient->setConnectTimeout(5000); 
   
   if (!pClient->connect(targetAddr)) {
     Serial.println("[BLE] Kapcsolódás sikertelen!");
-    bleConnecting = false; return false;
+    NimBLEDevice::deleteClient(pClient); pClient = nullptr; bleConnecting = false; return false;
   }
   
   Serial.println("[BLE] Fizikai kapcsolat sikeres! Várakozás a GATT felépülésre (1.5 mp)...");
   delay(1500); 
   
+  auto pServices = pClient->getServices(true);
+  if (pServices.empty()) {
+    Serial.println("[BLE] HIBA: Nem sikerültek a szolgáltatások lekérdezései!");
+    pClient->disconnect(); bleConnecting = false; return false;
+  }
+
   pTxChar = nullptr; pRxChar = nullptr;
-  
-  const std::vector<NimBLERemoteService*>& services = pClient->getServices(true);
-  for (auto pSvc : services) {
+  NimBLERemoteService* pObdSvc = nullptr;
+
+  // 1. Keresés prioritás szerint: FFF0 vagy FFE0
+  for (auto pSvc : pServices) {
     String svcUUID = pSvc->getUUID().toString().c_str(); svcUUID.toLowerCase();
     Serial.printf("[BLE] Látott szolgáltatás: %s\n", svcUUID.c_str());
-    
-    // Kifejezetten a Konnwei adatcsatornáját (FFF0 / FFE0) keressük
-  // FFF0, FFE0 vagy AE30 keresése
-  if (svcUUID.indexOf("fff0") >= 0 || svcUUID.indexOf("ffe0") >= 0 || svcUUID.indexOf("ae30") >= 0) {
-    Serial.printf("[BLE]   >>> OBD/KONNWEI SZOLGÁLTATÁS MEGTALÁLVA (%s)! <<<\n", svcUUID.c_str());
-    const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
-    for (auto pChr : chars) {
-      String charUUID = pChr->getUUID().toString().c_str(); charUUID.toLowerCase();
-      bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
-      bool notifiable = pChr->canNotify() || pChr->canIndicate();
-      Serial.printf("[BLE]   Karakterisztika: %s (Write=%d, Notify=%d)\n", charUUID.c_str(), writable, notifiable);
+    if (svcUUID.indexOf("fff0") >= 0 || svcUUID.indexOf("ffe0") >= 0) {
+      pObdSvc = pSvc; break;
+    }
+  }
+
+  // 2. Ha nincs FFF0, nézzük az AE30-at
+  if (pObdSvc == nullptr) {
+    for (auto pSvc : pServices) {
+      String svcUUID = pSvc->getUUID().toString().c_str(); svcUUID.toLowerCase();
+      if (svcUUID.indexOf("ae30") >= 0) { pObdSvc = pSvc; break; }
+    }
+  }
+
+  // Ha találtunk dedikált OBD szolgáltatást
+  if (pObdSvc != nullptr) {
+    Serial.printf("[BLE]   >>> OBD/KONNWEI SZOLGÁLTATÁS MEGTALÁLVA (%s)! <<<\n", pObdSvc->getUUID().toString().c_str());
+    auto pChars = pObdSvc->getCharacteristics(true);
+    if (!pChars.empty()) {
+      // Kifejezetten olyan sémát keresünk, ami biztosan jó
+      for (auto pChr : pChars) {
+        String charUUID = pChr->getUUID().toString().c_str(); charUUID.toLowerCase();
+        bool writable = pChr->canWrite() || pChr->canWriteNoResponse();
+        bool notifiable = pChr->canNotify() || pChr->canIndicate();
+        Serial.printf("[BLE]   Karakterisztika: %s (Write=%d, Notify=%d)\n", charUUID.c_str(), writable, notifiable);
+        
+        // Megpróbáljuk a legadekvátabbat párosítani
+        if (notifiable && pRxChar == nullptr) pRxChar = pChr;
+        else if (writable && pTxChar == nullptr) pTxChar = pChr;
+      }
+    }
+  }
+
+  // Fallback: Ha még mindig nincs TX/RX, próbáljuk meg bármivel ami TX/RX képes a GAP/GATT-on kívül
+  if (pTxChar == nullptr || pRxChar == nullptr) {
+    pTxChar = nullptr; pRxChar = nullptr; // Reset
+    for (auto pSvc : pServices) {
+      String svcUUID = pSvc->getUUID().toString().c_str(); svcUUID.toLowerCase();
+      if (svcUUID.indexOf("1800") >= 0 || svcUUID.indexOf("1801") >= 0) continue; 
       
-      if (writable && pTxChar == nullptr) pTxChar = pChr;
-      if (notifiable && pRxChar == nullptr) pRxChar = pChr;
-    }
-    if (pTxChar && pRxChar) break; 
-  }
-}
-
-// Fallback: Ha nem találunk UUID-t, próbáljuk meg bármivel ami TX/RX képes
-if (pTxChar == nullptr || pRxChar == nullptr) {
-  for (auto pSvc : services) {
-    const std::vector<NimBLERemoteCharacteristic*>& chars = pSvc->getCharacteristics(true);
-    for (auto pChr : chars) {
-      if ((pChr->canWrite() || pChr->canWriteNoResponse()) && pTxChar == nullptr) pTxChar = pChr;
-      if (pChr->canNotify() && pRxChar == nullptr) pRxChar = pChr;
-    }
-    if (pTxChar && pRxChar) {
-      Serial.printf("[BLE] Fallback SPP megtalálva a %s szolgáltatásban!\n", pSvc->getUUID().toString().c_str());
-      break;
+      auto pChars = pSvc->getCharacteristics(true);
+      if (!pChars.empty()) {
+        for (auto pChr : pChars) {
+          if ((pChr->canWrite() || pChr->canWriteNoResponse()) && pTxChar == nullptr) pTxChar = pChr;
+          else if (pChr->canNotify() && pRxChar == nullptr) pRxChar = pChr;
+        }
+      }
+      if (pTxChar && pRxChar) {
+        Serial.printf("[BLE] Fallback SPP megtalálva a %s szolgáltatásban!\n", pSvc->getUUID().toString().c_str());
+        break;
+      }
     }
   }
-}
 
-if (pTxChar == nullptr || pRxChar == nullptr) {
-  Serial.println("[BLE] HIBA: Nem találom a TX/RX csatornákat!");
-  gfx->fillRect(30, 50, 260, 60, BLACK); gfx->setFont(&FreeSans12pt7b); gfx->setTextColor(RED, BLACK);
-  gfx->setTextSize(1); gfx->setCursor(40, 75); gfx->print("No OBD service found!");
-  delay(2000); disconnectOBD(); return false;
-}
+  if (pTxChar == nullptr || pRxChar == nullptr) {
+    Serial.println("[BLE] HIBA: Nem találom a TX/RX csatornákat!");
+    gfx->fillRect(30, 50, 260, 60, BLACK); gfx->setFont(&FreeSans12pt7b); gfx->setTextColor(RED, BLACK);
+    gfx->setTextSize(1); gfx->setCursor(40, 75); gfx->print("No OBD service found!");
+    delay(2000); disconnectOBD(); return false;
+  }
 
 // Subscribe és explicite CCCD bekapcsolása a lusta klónokhoz
 if (pRxChar->canNotify()) {
