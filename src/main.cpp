@@ -504,27 +504,41 @@ void runBLEScan() {
   gfx->setCursor(75, 95); // Shifted Y
   gfx->println("Scanning...");
 
-  // WiFi lekapcsolása (disconnect), de a módot nem állítjuk OFF-ra,
-  // mert az ESP32-C6-on az lekapcsolná a közös RF PHY rádiót is!
-  WiFi.disconnect(true);
-  delay(100); 
+  Serial.println("[BLE] Felkészülés a szkennelésre...");
 
-  // Beragadt eredmények ürítése
+  // 1. Kapcsoljuk le a Wi-Fi-t kíméletesen, hogy ne tartsa fogva az antennát
+  WiFi.disconnect(true);
+  delay(50); // Hardver átkapcsolási idő
+
+  // 2. KRITIKUS LÉPÉS A C6-NÁL: Ha a NimBLE már futott, leállítjuk, 
+  // majd újraindítjuk, hogy kényszerítsük az RF PHY felébresztését.
+  NimBLEDevice::deinit(true); 
+  delay(50);
+  NimBLEDevice::init("ZoEyee-Scanner");
+  
+  // Mivel újra lett inicializálva, a mutatókat is frissíteni kell
+  pBLEScan = NimBLEDevice::getScan();
+  pBLEScan->setActiveScan(true);
+  
+  // Töröljük a memóriát
   pBLEScan->clearResults();
 
   Serial.println("[BLE] Szkennelés indítási parancs kiküldve...");
 
-  // NimBLE 2.x: start() is non-blocking, returns bool if started successfully
+  // A start() visszatérési értékének ellenőrzése (bool)
   if (pBLEScan->start(scanTime)) {
     Serial.println("[BLE] Rádió aktív, szkennelés folyamatban...");
+    
+    // Mivel a NimBLE 2.x aszinkron, itt várakozunk, amíg a rádió végez
     while (pBLEScan->isScanning()) {
       delay(100);
     }
     Serial.println("[BLE] Szkennelési idő letelt.");
   } else {
-    Serial.println("[BLE] HIBA: Az RF hardver megtagadta a szkennelés indítását!");
+    Serial.println("[BLE] HIBA: A rádió megtagadta a start() parancsot!");
   }
 
+  // Eredmények lekérdezése
   NimBLEScanResults foundDevices = pBLEScan->getResults();
   btTotalDevices = foundDevices.getCount();
   
