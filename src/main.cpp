@@ -89,8 +89,16 @@ static char obdBuffer[256];
 static int obdBufIndex = 0;
 String lastOBDValue = "";
 unsigned long lastOBDPollTime = 0;
-const unsigned long OBD_POLL_INTERVAL = 1500; // ms between ATRV polls
+const unsigned long OBD_POLL_INTERVAL = 2000; // ms between polls
 volatile bool bleDisconnectedFlag = false;
+
+// ZOE OBD adatok
+float obdSOC = -1;        // Akkumulátor töltöttség %
+int   obdSOH = -1;        // Akkumulátor egészség %
+float obdHVBatTemp = -99;  // HV akku hőmérséklet °C
+String obd12V = "";       // 12V feszültség
+int   obdPollIndex = 0;   // Polling rotáció: 0=SOC, 1=SOH, 2=Temp, 3=12V
+bool  obdZoeMode = false;  // true = ZOE UDS mód aktív
 
 // Cached BLE Devices
 #define MAX_BLE_DEVICES 30
@@ -376,64 +384,68 @@ void setBrightness(int val) {
 // UI Kirajzoló függvények
 void showHome() {
   gfx->fillScreen(BLACK);
-  gfx->fillRect(0, 0, 320, 20, BLACK);
+  drawTopBar();
   if (isBluetoothConnected) {
-    gfx->fillRoundRect(294, 2, 18, 16, 6, BLUE);
-    gfx->setFont(&FreeSans9pt7b);
-    gfx->setTextColor(WHITE);
-    gfx->setTextSize(1);
-    gfx->setCursor(298, 15);
-    gfx->print("B");
-    gfx->setFont(&FreeSans9pt7b);
-    gfx->setTextColor(CYAN);
-    gfx->setTextSize(1);
-    gfx->setCursor(110, 55);
-    gfx->print("OBD Voltage");
+    // === ZOE Dashboard ===
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(CYAN); gfx->setTextSize(1);
+    gfx->setCursor(105, 35); gfx->print("ZOE Dashboard");
+    gfx->drawLine(0, 40, 320, 40, WHITE);
 
+    // SOC (nagy, kiemelt)
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
+    gfx->setCursor(10, 65); gfx->print("SOC:");
     gfx->setFont(&FreeSans18pt7b);
-    gfx->setTextColor(GREEN);
-    gfx->setTextSize(1);
-    if (lastOBDValue.length() > 0) {
-      int estW = lastOBDValue.length() * 16;
-      int cx = (320 - estW) / 2;
-      gfx->setCursor(cx, 105);
-      gfx->print(lastOBDValue.c_str());
-    } else {
-      gfx->setCursor(90, 105);
-      gfx->print("Waiting...");
-    }
+    gfx->setTextColor(obdSOC >= 20 ? GREEN : RED);
+    if (obdSOC >= 0) { gfx->setCursor(70, 70); gfx->printf("%.0f%%", obdSOC); }
+    else { gfx->setCursor(70, 70); gfx->print("--"); }
+
+    // SOH
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
+    gfx->setCursor(190, 65); gfx->print("SOH:");
+    gfx->setFont(&FreeSans12pt7b); gfx->setTextColor(CYAN);
+    if (obdSOH >= 0) { gfx->setCursor(240, 65); gfx->printf("%d%%", obdSOH); }
+    else { gfx->setCursor(240, 65); gfx->print("--"); }
+
+    // Akku hőmérséklet
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
+    gfx->setCursor(10, 100); gfx->print("Bat Temp:");
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(obdHVBatTemp > 35 ? RED : (obdHVBatTemp < 5 ? BLUE : GREEN));
+    if (obdHVBatTemp > -99) { gfx->setCursor(110, 100); gfx->printf("%.0fC", obdHVBatTemp); }
+    else { gfx->setCursor(110, 100); gfx->print("--"); }
+
+    // 12V
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
+    gfx->setCursor(10, 130); gfx->print("12V:");
+    gfx->setFont(&FreeSans12pt7b); gfx->setTextColor(YELLOW);
+    if (obd12V.length() > 0) { gfx->setCursor(60, 130); gfx->print(obd12V.c_str()); }
+    else { gfx->setCursor(60, 130); gfx->print("--"); }
+
+    // Státusz sor
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0x4208); gfx->setTextSize(1);
+    gfx->setCursor(10, 165); gfx->print("Hold to open menu");
   } else {
-    gfx->setFont(&FreeSans18pt7b);
-    gfx->setTextColor(RED);
-    gfx->setTextSize(1);
-    gfx->setCursor(35, 90);
-    gfx->print("No Connection");
-    gfx->setFont(&FreeSans9pt7b);
-    gfx->setTextColor(WHITE);
-    gfx->setTextSize(1);
-    gfx->setCursor(50, 130);
-    gfx->print("Connect via BT SCAN");
+    gfx->setFont(&FreeSans18pt7b); gfx->setTextColor(RED); gfx->setTextSize(1);
+    gfx->setCursor(35, 90); gfx->print("No Connection");
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
+    gfx->setCursor(50, 130); gfx->print("Connect via BT SCAN");
   }
 }
 
 void updateHomeOBD() {
-  gfx->fillRect(0, 60, 320, 55, BLACK);
-  if (isBluetoothConnected) {
-    gfx->setFont(&FreeSans18pt7b);
-    gfx->setTextColor(GREEN);
-    gfx->setTextSize(1);
-    if (lastOBDValue.length() > 0) {
-      int estW = lastOBDValue.length() * 16;
-      int cx = (320 - estW) / 2;
-      gfx->setCursor(cx, 105);
-      gfx->print(lastOBDValue.c_str());
-    } else {
-      gfx->setCursor(90, 105);
-      gfx->print("Waiting...");
-    }
-  } else {
-    showHome();
-  }
+  if (!isBluetoothConnected) { showHome(); return; }
+  // Frissítjük a teljes dashboardot (kicsi kijelzőn ez gyors)
+  showHome();
+}
+
+// UDS hex válasz dekódolása: "622002 1A2B" → 0x1A2B
+int parseUDSHex(const String& resp, const char* expectedPrefix, int byteCount) {
+  String r = resp; r.trim(); r.replace(" ", "");
+  String prefix = String(expectedPrefix); prefix.replace(" ", "");
+  int idx = r.indexOf(prefix);
+  if (idx < 0) return -1;
+  String hexPart = r.substring(idx + prefix.length(), idx + prefix.length() + byteCount * 2);
+  return (int)strtol(hexPart.c_str(), NULL, 16);
 }
 
 void drawMenu(bool fullRedraw = true) {
@@ -624,7 +636,8 @@ void runBLEScan() {
   NimBLEDevice::deinit(true);
   delay(300);
   NimBLEDevice::init("ZoEyee-Scanner");
-  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC); // Fixált gyári MAC – Konnwei ne utasítsa el!
+  NimBLEDevice::setOwnAddrType(
+      BLE_OWN_ADDR_PUBLIC); // Fixált gyári MAC – Konnwei ne utasítsa el!
 
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
@@ -1126,7 +1139,29 @@ bool connectToOBD(int deviceIndex) {
   Serial.printf("[BLE] ELM327 hitelesítve: %s\n", lastOBDValue.c_str());
   sendOBDCommand("ATE0");
   delay(500);
-  Serial.println("[BLE] OBD adapter felállt!");
+
+  // === Renault ZOE CAN protokoll beállítás ===
+  Serial.println("[OBD] ZOE CAN protokoll beállítás...");
+  gfx->fillRect(30, 50, 260, 40, BLACK);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(YELLOW, BLACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(50, 75);
+  gfx->print("Setting up CAN...");
+
+  // Protokoll: ISO 15765-4 CAN (11 bit, 500kbps)
+  sendOBDCommand("ATSP6"); delay(500); lastOBDValue = "";
+  // EVC ECU fejléc (Electric Vehicle Controller)
+  sendOBDCommand("ATSH7E4"); delay(300); lastOBDValue = "";
+  // Válasz szűrő: csak a 7EC-es (EVC válasz) kereteket figyeljük  
+  sendOBDCommand("ATCRA7EC"); delay(300); lastOBDValue = "";
+  // Diagnosztikai session megnyitása (Extended)
+  sendOBDCommand("10C0"); delay(500); lastOBDValue = "";
+
+  obdZoeMode = true;
+  obdPollIndex = 0;
+  obdSOC = -1; obdSOH = -1; obdHVBatTemp = -99; obd12V = "";
+  Serial.println("[BLE] OBD adapter felállt, ZOE mód aktív!");
   return true;
 }
 
@@ -1163,7 +1198,8 @@ void setup(void) {
   showHome();
 
   NimBLEDevice::init("ZoEyee-Scanner");
-  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC); // Fixált gyári MAC – Konnwei ne utasítsa el!
+  NimBLEDevice::setOwnAddrType(
+      BLE_OWN_ADDR_PUBLIC); // Fixált gyári MAC – Konnwei ne utasítsa el!
   Serial.printf("[SYS] Setup Kész. Free heap: %d bytes\n", ESP.getFreeHeap());
 }
 
@@ -1325,11 +1361,54 @@ void loop() {
   if (currentState == STATE_HOME && isBluetoothConnected) {
     if (millis() - lastOBDPollTime >= OBD_POLL_INTERVAL) {
       lastOBDPollTime = millis();
-      sendOBDCommand("ATRV");
+
+      if (obdZoeMode) {
+        // ZOE UDS polling rotáció
+        switch (obdPollIndex) {
+          case 0: sendOBDCommand("222002"); break; // SOC
+          case 1: sendOBDCommand("223206"); break; // SOH
+          case 2:
+            // Akku hőmérséklet: az EVC-ből a 42e frame HV Bat Temp mezőjéből
+            // CanZE: 7ec,24,31,1,40,0,°C,223028 → de inkább: 42e broadcast
+            // Egyszerűbb: EVC-ből 2233d8 (utolsó 10 hőmérséklet log) vagy
+            // Standard OBD: 0105 (hűtővíz hőmérséklet)
+            // Próbáljuk az ATSH7E4 + 2233d8-at (utolsó hőmérséklet napló)
+            sendOBDCommand("2233d8"); break;
+          case 3:
+            // 12V: visszaváltunk AT parancsra
+            sendOBDCommand("ATRV"); break;
+        }
+        obdPollIndex = (obdPollIndex + 1) % 4;
+      } else {
+        sendOBDCommand("ATRV");
+      }
     }
-    static String lastDisplayedValue = "";
-    if (lastOBDValue != lastDisplayedValue) {
-      lastDisplayedValue = lastOBDValue;
+
+    // Válasz feldolgozás
+    if (lastOBDValue.length() > 0) {
+      String resp = lastOBDValue;
+      Serial.printf("[ZOE] Feldolgozás: '%s'\n", resp.c_str());
+
+      if (resp.indexOf("622002") >= 0 || resp.indexOf("62 20 02") >= 0) {
+        // SOC: raw × 0.02 %
+        int raw = parseUDSHex(resp, "622002", 2);
+        if (raw >= 0) { obdSOC = raw * 0.02; Serial.printf("[ZOE] SOC = %.1f%%\n", obdSOC); }
+      } else if (resp.indexOf("623206") >= 0 || resp.indexOf("62 32 06") >= 0) {
+        // SOH: raw × 1 %
+        int raw = parseUDSHex(resp, "623206", 1);
+        if (raw >= 0) { obdSOH = raw; Serial.printf("[ZOE] SOH = %d%%\n", obdSOH); }
+      } else if (resp.indexOf("6233d8") >= 0 || resp.indexOf("62 33 d8") >= 0) {
+        // Hőmérséklet: első bájt, raw - 40 = °C
+        int raw = parseUDSHex(resp, "6233d8", 1);
+        if (raw >= 0) { obdHVBatTemp = raw - 40; Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp); }
+      } else if (resp.endsWith("V")) {
+        // ATRV válasz (pl. "13.2V")
+        obd12V = resp;
+        Serial.printf("[ZOE] 12V = %s\n", obd12V.c_str());
+      } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0) {
+        Serial.printf("[ZOE] ECU nem válaszolt: %s\n", resp.c_str());
+      }
+      lastOBDValue = "";
       updateHomeOBD();
     }
   }
