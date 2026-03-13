@@ -557,9 +557,13 @@ bool connectToOBD(int deviceIndex) {
     delay(50);
     if (lastOBDValue.length() > 0) {
       Serial.printf("[OBD] ATZ Válasz: '%s'\n", lastOBDValue.c_str());
-      if (lastOBDValue.indexOf("ELM") >= 0 || lastOBDValue.indexOf("KONNWEI") >= 0 || lastOBDValue.indexOf("OBD") >= 0) {
+      String resp = lastOBDValue; resp.toUpperCase();
+      if (resp.indexOf("ELM") >= 0 || resp.indexOf("KONNWEI") >= 0 || 
+          resp.indexOf("OBD") >= 0 || resp.indexOf("KW") >= 0 || 
+          resp.indexOf("V1.5") >= 0) {
         isELM = true; break;
       }
+      lastOBDValue = ""; // Töröljük a puffert, hogy ne floodoljon a rossz válasszal
     }
   }
   
