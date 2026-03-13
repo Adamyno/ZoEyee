@@ -463,7 +463,11 @@ void drawMenu(bool fullRedraw = true) {
     gfx->fillTriangle(10, 100, 25, 90, 25, 110, CYAN);
     gfx->fillTriangle(310, 100, 295, 90, 295, 110, CYAN);
   }
-  gfx->fillRect(40, 50, 240, 60, BLACK);
+  // Expand clearing rectangle to ensure long text like "BRIGHTNESS" is fully erased
+  // Previous width was 240, starting at x=40. Let's make it start at 30 and width 260.
+  // Also lower the Y starting point slightly to clear the taller text completely.
+  gfx->fillRect(28, 50, 264, 60, BLACK);
+  
   gfx->setFont(&FreeSans18pt7b);
   gfx->setTextColor(WHITE, BLACK);
   gfx->setTextSize(1);
@@ -472,7 +476,9 @@ void drawMenu(bool fullRedraw = true) {
   else if (menuIndex == 1) textX = 70;
   else if (menuIndex == 2) textX = 90;
   else if (menuIndex == 3) textX = 60;
-  gfx->setCursor(textX, 95);
+  // Move text down from 95 to 110 to align exactly between the triangles (Y: 90 to 110, center 100)
+  // For FreeSans18pt, the baseline is the Y coordinate.
+  gfx->setCursor(textX, 108);
   gfx->print(menuItems[menuIndex]);
 }
 
