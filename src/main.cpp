@@ -504,7 +504,12 @@ void runBLEScan() {
   gfx->setCursor(75, 95); // Shifted Y
   gfx->println("Scanning...");
 
-  NimBLEScanResults foundDevices = pBLEScan->getResults(scanTime, false);
+  // NimBLE 2.x: start() is non-blocking, must wait for scan to complete
+  pBLEScan->start(scanTime);
+  while (pBLEScan->isScanning()) {
+    delay(100);
+  }
+  NimBLEScanResults foundDevices = pBLEScan->getResults();
   btTotalDevices = foundDevices.getCount();
   
   // Cap at max devices
