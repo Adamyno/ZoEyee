@@ -59,6 +59,7 @@ const char* menuItems[] = {"SYS INFO", "WIFI SCAN", "BT SCAN", "TOUCH TEST", "BR
 
 // Forward declarations
 void drawTopBar();
+void disconnectOBD();
 
 // Brightness
 int currentBrightness = 128; // 0-255
@@ -464,7 +465,7 @@ void onBLENotify(NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t lengt
 
 void sendOBDCommand(const char* cmd) {
   if (pTxChar != nullptr && isBluetoothConnected) {
-    char fullCmd[64]; snprintf(fullCmd, sizeof(fullCmd), "%s\r\n", cmd);
+    char fullCmd[64]; snprintf(fullCmd, sizeof(fullCmd), "%s\r", cmd);
     pTxChar->writeValue((uint8_t*)fullCmd, strlen(fullCmd));
     Serial.printf("[OBD] Sent: %s\n", cmd);
   }
@@ -559,20 +560,29 @@ bool connectToOBD(int deviceIndex) {
   gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(YELLOW, BLACK); gfx->setTextSize(1);
   gfx->setCursor(70, 75); gfx->print("Verifying OBD...");
   
-  delay(500); sendOBDCommand("ATZ");
-  unsigned long verifyStart = millis(); bool isELM = false;
-  while (millis() - verifyStart < 3000) {
-    delay(50);
-    if (lastOBDValue.length() > 0) {
-      Serial.printf("[OBD] ATZ Válasz: '%s'\n", lastOBDValue.c_str());
-      String resp = lastOBDValue; resp.toUpperCase();
-      if (resp.indexOf("ELM") >= 0 || resp.indexOf("KONNWEI") >= 0 || 
-          resp.indexOf("OBD") >= 0 || resp.indexOf("KW") >= 0 || 
-          resp.indexOf("V1.5") >= 0) {
-        isELM = true; break;
+  delay(500); 
+  
+  // Többlépcsős ATZ hitelesítés
+  bool isELM = false;
+  const char* atzCommands[] = {"ATZ", "ATZ\n"};
+  
+  for (int cmdIdx = 0; cmdIdx < 2 && !isELM; cmdIdx++) {
+    sendOBDCommand(atzCommands[cmdIdx]);
+    unsigned long verifyStart = millis();
+    while (millis() - verifyStart < 2500) {
+      delay(50);
+      if (lastOBDValue.length() > 0) {
+        Serial.printf("[OBD] ATZ Válasz: '%s'\n", lastOBDValue.c_str());
+        String resp = lastOBDValue; resp.toUpperCase();
+        if (resp.indexOf("ELM") >= 0 || resp.indexOf("KONNWEI") >= 0 || 
+            resp.indexOf("OBD") >= 0 || resp.indexOf("KW") >= 0 || 
+            resp.indexOf("V1.5") >= 0 || resp.indexOf("OK") >= 0) {
+          isELM = true; break;
+        }
+        lastOBDValue = ""; 
       }
-      lastOBDValue = ""; // Töröljük a puffert, hogy ne floodoljon a rossz válasszal
     }
+    if (!isELM) Serial.printf("[BLE] Nincs válasz a(z) %s parancsra, újrapróbálkozás...\n", atzCommands[cmdIdx]);
   }
   
   if (!isELM) {
@@ -580,7 +590,8 @@ bool connectToOBD(int deviceIndex) {
     gfx->fillRect(30, 50, 260, 60, BLACK); gfx->setFont(&FreeSans12pt7b); gfx->setTextColor(RED, BLACK);
     gfx->setTextSize(1); gfx->setCursor(40, 75); gfx->print("Not an OBD device");
     delay(2000); 
-    pClient->disconnect(); isBluetoothConnected = false; pTxChar = nullptr; pRxChar = nullptr; return false;
+    disconnectOBD(); 
+    return false;
   }
   
   Serial.printf("[BLE] ELM327 hitelesítve: %s\n", lastOBDValue.c_str());
