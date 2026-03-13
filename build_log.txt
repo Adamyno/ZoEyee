@@ -1,0 +1,65 @@
+Processing esp32-c6-devkitc-1 (platform: https://github.com/pioarduino/platform-espressif32.git; board: esp32-c6-devkitc-1; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32-c6-devkitc-1.html
+PLATFORM: Espressif 32 (55.3.37+sha.a9fac07) > Espressif ESP32-C6-DevKitC-1
+HARDWARE: ESP32C6 160MHz, 320KB RAM, 8MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-builtin, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - contrib-piohome @ 3.4.4 
+ - framework-arduinoespressif32 @ 3.3.7 
+ - framework-arduinoespressif32-libs @ 5.5.0+sha.87912cd291 
+ - tool-esptoolpy @ 5.1.2 
+ - toolchain-riscv32-esp @ 14.2.0+20251107
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 45 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- SPI @ 3.3.7
+|-- PNGdec @ 1.0.2
+|-- lvgl @ 8.3.10
+|-- FS @ 3.3.7
+|-- SD @ 3.3.7
+|-- WiFi @ 3.3.7
+|-- BLE @ 3.3.7
+Building in release mode
+Compiling .pio/build/esp32-c6-devkitc-1/src/LCD_Image.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/Stream.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/StreamString.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/Tone.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/USB.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/USBCDC.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/USBMSC.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/WMath.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/WString.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/base64.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/cbuf.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/chip-debug-report.cpp.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-adc.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-bt.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-cpu.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-dac.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-gpio.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-hosted.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-i2c-ng.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-i2c-slave.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-i2c.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-ledc.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-log-wrapper.c.o
+src/LCD_Image.cpp: In function 'void Show_Image(const char*)':
+src/LCD_Image.cpp:67:73: error: invalid conversion from 'int (*)(PNGDRAW*)' {aka 'int (*)(png_draw_tag*)'} to 'void (*)(PNGDRAW*)' {aka 'void (*)(png_draw_tag*)'} [-fpermissive]
+   67 |   int16_t ret = png.open(filePath, pngOpen, pngClose, pngRead, pngSeek, pngDraw);
+      |                                                                         ^~~~~~~
+      |                                                                         |
+      |                                                                         int (*)(PNGDRAW*) {aka int (*)(png_draw_tag*)}
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-matrix.c.o
+In file included from src/LCD_Image.h:3,
+                 from src/LCD_Image.cpp:1:
+/home/adam/Code/ESP32-C6-LCD-1.47-Demo/Arduino/libraries/PNGdec/src/PNGdec.h:166:171: note:   initializing argument 6 of 'int PNG::open(const char*, void* (*)(const char*, int32_t*), void (*)(void*), int32_t (*)(PNGFILE*, uint8_t*, int32_t), int32_t (*)(PNGFILE*, int32_t), void (*)(PNGDRAW*))'
+  166 |     int open(const char *szFilename, PNG_OPEN_CALLBACK *pfnOpen, PNG_CLOSE_CALLBACK *pfnClose, PNG_READ_CALLBACK *pfnRead, PNG_SEEK_CALLBACK *pfnSeek, PNG_DRAW_CALLBACK *pfnDraw);
+      |                                                                                                                                                        ~~~~~~~~~~~~~~~~~~~^~~~~~~
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-misc.c.o
+Compiling .pio/build/esp32-c6-devkitc-1/FrameworkArduino/esp32-hal-periman.c.o
+*** [.pio/build/esp32-c6-devkitc-1/src/LCD_Image.cpp.o] Error 1
+========================= [FAILED] Took 10.97 seconds =========================
