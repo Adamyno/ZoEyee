@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include "ZoeLogo.h"
 
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
@@ -429,6 +430,9 @@ void showHome() {
     gfx->setCursor(35, 90); gfx->print("No Connection");
     gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
     gfx->setCursor(50, 130); gfx->print("Connect via BT SCAN");
+    // Státusz sor
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0x4208); gfx->setTextSize(1);
+    gfx->setCursor(10, 165); gfx->print("Double tap for menu");
   }
 }
 
@@ -1194,9 +1198,14 @@ void setup(void) {
   if (!gfx->begin())
     Serial.println("gfx->begin() failed!");
   lcd_reg_init();
-  gfx->setRotation(0);
   gfx->setRotation(1);
   touch_init();
+
+  // Draw Boot Logo
+  gfx->fillScreen(BLACK);
+  gfx->drawXBitmap(32, 32, zoe256_bits, zoe256_width, zoe256_height, WHITE);
+  delay(5000);
+
   showHome();
 
   NimBLEDevice::init("ZoEyee-Scanner");
