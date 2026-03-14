@@ -531,12 +531,8 @@ void drawMenu(bool fullRedraw = true) {
     gfx->setCursor(iconX - 3, iconY + 6);
     gfx->print("i");
   } else if (menuIndex == 1) {
-    // WIFI: 4 arcs drawn as filled rectangles (signal bars)
-    int bx = iconX - 14, by = iconY + 8;
-    for (int b = 0; b < 4; b++) {
-      int bh = 5 + b * 7;
-      gfx->fillRect(bx + b * 10, by - bh, 7, bh, CYAN);
-    }
+    // WIFI: Official Wi-Fi Alliance logo
+    gfx->drawXBitmap(iconX - 15, iconY - 14, icon_wifi_menu_bits, icon_wifi_menu_width, icon_wifi_menu_height, WHITE);
   } else if (menuIndex == 2) {
     // BT SCAN: Blue pill shape with white bluetooth symbol (matching the reference image)
     gfx->fillRoundRect(iconX - 12, iconY - 16, 24, 32, 12, 0x019B); // BT Blue pill
