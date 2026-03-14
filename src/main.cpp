@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <Preferences.h>
 #include "ZoeLogo.h"
 #include "Icons.h"
 
@@ -47,6 +48,7 @@ enum State {
   STATE_MENU,
   STATE_INFO,
   STATE_WIFI_MENU,
+  STATE_WIFI_CLIENT_MENU,
   STATE_WIFI_LIST,
   STATE_WIFI_KEYBOARD,
   STATE_WIFI_CONNECTING,
@@ -145,8 +147,11 @@ CachedWifi wifiNetworks[MAX_WIFI_NETWORKS];
 int wifiCount = 0;
 int wifiSelectedIndex = 0;
 bool wifiAPActive = false;
+bool wifiAutoSave = false;
 String wifiPassword = "";
 String wifiTargetSSID = "";
+
+Preferences preferences;
 
 // Keyboard layout
 const char* kbRowsLower[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
@@ -648,12 +653,12 @@ void showWifiMenu() {
   gfx->setCursor(100, 70);
   gfx->print(wifiAPActive ? "AP MODE: ON" : "AP MODE: OFF");
 
-  // Client Mode button
+  // Client Menu button
   gfx->drawRoundRect(30, 88, 260, 28, 6, WHITE);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
   gfx->setCursor(85, 108);
-  gfx->print("CLIENT MODE");
+  gfx->print("CLIENT MENU");
 
   // Status button
   gfx->drawRoundRect(30, 126, 260, 28, 6, CYAN);
@@ -661,6 +666,50 @@ void showWifiMenu() {
   gfx->setTextColor(CYAN);
   gfx->setCursor(120, 146);
   gfx->print("STATUS");
+}
+
+void showWifiClientMenu() {
+  gfx->fillScreen(BLACK);
+  drawTopBar();
+  gfx->setFont(&FreeSans12pt7b);
+  gfx->setTextColor(YELLOW);
+  gfx->setTextSize(1);
+  gfx->setCursor(85, 35);
+  gfx->print("CLIENT MENU");
+  gfx->drawLine(0, 40, 320, 40, WHITE);
+
+  // Scan button
+  gfx->drawRoundRect(30, 50, 260, 28, 6, CYAN);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(CYAN);
+  gfx->setCursor(75, 70);
+  gfx->print("SCAN NETWORKS");
+
+  // Save Config checkbox
+  gfx->drawRect(30, 92, 20, 20, WHITE);
+  if (wifiAutoSave) {
+    gfx->drawLine(30, 92, 50, 112, GREEN);
+    gfx->drawLine(50, 92, 30, 112, GREEN);
+  }
+  gfx->setTextColor(WHITE);
+  gfx->setCursor(60, 108);
+  gfx->print("Save & Auto-Conn");
+
+  // Delete button (only if saved target SSID exists)
+  if (preferences.getString("ssid", "").length() > 0) {
+    gfx->fillRoundRect(230, 88, 60, 28, 6, RED);
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(240, 108);
+    gfx->print("DEL");
+  }
+
+  // Disconnect button
+  bool connected = (WiFi.status() == WL_CONNECTED);
+  uint16_t disColor = connected ? RED : 0x3186; // Grey if not connected
+  gfx->drawRoundRect(30, 126, 260, 28, 6, disColor);
+  gfx->setTextColor(disColor);
+  gfx->setCursor(100, 146);
+  gfx->print("DISCONNECT");
 }
 
 void showWifiList(bool fullRedraw = true) {
@@ -844,6 +893,10 @@ void connectToWifi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    if (wifiAutoSave) {
+      preferences.putString("ssid", wifiTargetSSID);
+      preferences.putString("pw", wifiPassword);
+    }
     gfx->fillRect(0, 120, 320, 30, BLACK);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(GREEN);
@@ -1508,6 +1561,19 @@ void setup(void) {
   gfx->setRotation(1);
   touch_init();
 
+  preferences.begin("wifi", false);
+  wifiAutoSave = preferences.getBool("auto", false);
+  wifiTargetSSID = preferences.getString("ssid", "");
+  wifiPassword = preferences.getString("pw", "");
+  if (wifiAutoSave && wifiTargetSSID.length() > 0) {
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    if (wifiPassword.length() > 0)
+      WiFi.begin(wifiTargetSSID.c_str(), wifiPassword.c_str());
+    else
+      WiFi.begin(wifiTargetSSID.c_str());
+  }
+
   // Draw Boot Logo
   gfx->fillScreen(BLACK);
   // Pozicionálás: 320x172 kijelzőn közepelve (zoe256: 256x106)
@@ -1638,9 +1704,12 @@ void loop() {
             } else if (currentState == STATE_BT_DEVICE_INFO) {
               currentState = STATE_BT_LIST;
               showBTList();
-            } else if (currentState == STATE_WIFI_LIST) {
+            } else if (currentState == STATE_WIFI_CLIENT_MENU) {
               currentState = STATE_WIFI_MENU;
               showWifiMenu();
+            } else if (currentState == STATE_WIFI_LIST) {
+              currentState = STATE_WIFI_CLIENT_MENU;
+              showWifiClientMenu();
             } else if (currentState == STATE_WIFI_MENU || currentState == STATE_WIFI_STATUS) {
               currentState = STATE_MENU;
               drawMenu();
@@ -1695,9 +1764,19 @@ void loop() {
               }
               showWifiMenu();
             }
-            // Client Mode button
+            // Client Menu button
             else if (startY >= 88 && startY <= 116) {
-              // Run WiFi scan
+              currentState = STATE_WIFI_CLIENT_MENU;
+              showWifiClientMenu();
+            }
+            // Status button
+            else if (startY >= 126 && startY <= 154) {
+              currentState = STATE_WIFI_STATUS;
+              showWifiStatus();
+            }
+          } else if (currentState == STATE_WIFI_CLIENT_MENU) {
+            // Scan Networks button
+            if (startY >= 50 && startY <= 78) {
               gfx->fillScreen(BLACK);
               drawTopBar();
               gfx->setFont(&FreeSans12pt7b);
@@ -1705,6 +1784,11 @@ void loop() {
               gfx->setTextSize(1);
               gfx->setCursor(80, 90);
               gfx->print("Scanning...");
+              if (wifiAPActive) {
+                WiFi.softAPdisconnect(true);
+                wifiAPActive = false;
+              }
+              WiFi.mode(WIFI_STA);
               int n = WiFi.scanNetworks();
               wifiCount = min(n, MAX_WIFI_NETWORKS);
               for (int i = 0; i < wifiCount; i++) {
@@ -1716,10 +1800,34 @@ void loop() {
               currentState = STATE_WIFI_LIST;
               showWifiList();
             }
-            // Status button
+            // Save & Auto-Conn checkbox
+            else if (startX >= 30 && startX <= 200 && startY >= 88 && startY <= 116) {
+              wifiAutoSave = !wifiAutoSave;
+              preferences.putBool("auto", wifiAutoSave);
+
+              // If checking it ON and connected, save current
+              if (wifiAutoSave && WiFi.status() == WL_CONNECTED) {
+                preferences.putString("ssid", WiFi.SSID());
+                preferences.putString("pw", wifiPassword); // stores last used pass
+              }
+              showWifiClientMenu();
+            }
+            // Delete button (X: 230 to 290)
+            else if (startX >= 230 && startX <= 290 && startY >= 88 && startY <= 116) {
+              if (preferences.getString("ssid", "").length() > 0) {
+                preferences.remove("ssid");
+                preferences.remove("pw");
+                preferences.putBool("auto", false);
+                wifiAutoSave = false;
+                showWifiClientMenu();
+              }
+            }
+            // Disconnect button
             else if (startY >= 126 && startY <= 154) {
-              currentState = STATE_WIFI_STATUS;
-              showWifiStatus();
+              if (WiFi.status() == WL_CONNECTED) {
+                WiFi.disconnect();
+                showWifiClientMenu();
+              }
             }
           } else if (currentState == STATE_WIFI_LIST) {
             // Connect button (moved down to Y=130)
