@@ -575,12 +575,10 @@ void drawTopBar() {
   gfx->drawXBitmap(294, 4, icon_bt_bits, icon_bt_width, icon_bt_height, btColor);
 
   // OBD (Car) Icon
-  if (isBluetoothConnected) {
-    if (lastOBDRxTime > 0 && millis() - lastOBDRxTime < 10000) {
-      gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, GREEN);
-    } else {
-      gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, 0x7BEF);
-    }
+  if (isBluetoothConnected && lastOBDRxTime > 0 && millis() - lastOBDRxTime < 10000) {
+    gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, GREEN);
+  } else {
+    gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, 0x7BEF);
   }
 }
 
