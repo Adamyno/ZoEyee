@@ -506,7 +506,7 @@ void drawMenu(bool fullRedraw = true) {
   gfx->setTextSize(1);
   int textX = 160 - (strlen(menuItems[menuIndex]) * 9); 
   if (menuIndex == 0) textX = 85;
-  else if (menuIndex == 1) textX = 70;
+  else if (menuIndex == 1) textX = 120;  // "WIFI" (short)
   else if (menuIndex == 2) textX = 90;
   else if (menuIndex == 3) textX = 60;
   // Move text down from 95 to 110 to align exactly between the triangles (Y: 90 to 110, center 100)
@@ -583,17 +583,30 @@ void drawTopBar() {
     gfx->fillTriangle(5, 10, 15, 4, 15, 16, WHITE);
     gfx->fillRect(15, 8, 6, 4, WHITE);
   }
-  // WiFi Icon
+  // WiFi Signal Bars (live strength indicator)
   bool isWifiConnected = (WiFi.status() == WL_CONNECTED);
   bool isWifiAP = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-  uint16_t wifiColor = 0x7BEF; // Halvány szürke placeholder
-  if (isWifiConnected) wifiColor = GREEN;
-  else if (isWifiAP) wifiColor = GREEN;
   
-  if (isWifiAP) {
-    gfx->drawXBitmap(273, 7, icon_ap_bits, icon_ap_width, icon_ap_height, wifiColor);
+  if (isWifiConnected) {
+    int wRssi = WiFi.RSSI();
+    int wBars = (wRssi > -50) ? 4 : (wRssi > -65) ? 3 : (wRssi > -75) ? 2 : 1;
+    int wBarX = 270;
+    int wBarBaseY = 18;
+    for (int b = 0; b < 4; b++) {
+      int barH = 3 + b * 4;
+      uint16_t barColor = (b < wBars) ? GREEN : 0x3186;
+      gfx->fillRect(wBarX + b * 6, wBarBaseY - barH, 4, barH, barColor);
+    }
+  } else if (isWifiAP) {
+    gfx->drawXBitmap(273, 7, icon_ap_bits, icon_ap_width, icon_ap_height, GREEN);
   } else {
-    gfx->drawXBitmap(272, 2, icon_wifi_bits, icon_wifi_width, icon_wifi_height, wifiColor);
+    // Inactive: grey mini bars
+    int wBarX = 270;
+    int wBarBaseY = 18;
+    for (int b = 0; b < 4; b++) {
+      int barH = 3 + b * 4;
+      gfx->fillRect(wBarX + b * 6, wBarBaseY - barH, 4, barH, 0x3186);
+    }
   }
 
   // Bluetooth Icon
@@ -707,14 +720,16 @@ void showWifiList(bool fullRedraw = true) {
   }
 
   // Index
-  gfx->setCursor(130, 108);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF);
+  gfx->setCursor(130, 118);
   gfx->printf("%d / %d", wifiSelectedIndex + 1, wifiCount);
 
   // Connect button
-  gfx->fillRoundRect(90, 120, 140, 30, 8, GREEN);
+  gfx->fillRoundRect(90, 130, 140, 30, 8, GREEN);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(BLACK);
-  gfx->setCursor(120, 141);
+  gfx->setCursor(120, 151);
   gfx->print("CONNECT");
 }
 
@@ -810,6 +825,7 @@ void connectToWifi() {
   gfx->print(wifiTargetSSID.c_str());
 
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
   if (wifiPassword.length() > 0)
     WiFi.begin(wifiTargetSSID.c_str(), wifiPassword.c_str());
   else
@@ -1701,8 +1717,8 @@ void loop() {
               showWifiStatus();
             }
           } else if (currentState == STATE_WIFI_LIST) {
-            // Connect button
-            if (startX >= 90 && startX <= 230 && startY >= 120 && startY <= 150 && wifiCount > 0) {
+            // Connect button (moved down to Y=130)
+            if (startX >= 90 && startX <= 230 && startY >= 130 && startY <= 160 && wifiCount > 0) {
               wifiTargetSSID = wifiNetworks[wifiSelectedIndex].ssid;
               if (wifiNetworks[wifiSelectedIndex].encrypted) {
                 wifiPassword = "";
@@ -1811,6 +1827,15 @@ void loop() {
       showBTList(true);
     else
       drawTopBar();
+  }
+
+  // Periodic top bar refresh (WiFi signal bars update)
+  static unsigned long lastTopBarRefresh = 0;
+  if (millis() - lastTopBarRefresh > 2000) {
+    lastTopBarRefresh = millis();
+    if (currentState == STATE_HOME || currentState == STATE_MENU) {
+      drawTopBar();
+    }
   }
 
   if (currentState == STATE_HOME && isBluetoothConnected) {
