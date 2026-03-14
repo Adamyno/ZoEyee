@@ -46,7 +46,11 @@ enum State {
   STATE_HOME,
   STATE_MENU,
   STATE_INFO,
-  STATE_WIFI_SCAN,
+  STATE_WIFI_MENU,
+  STATE_WIFI_LIST,
+  STATE_WIFI_KEYBOARD,
+  STATE_WIFI_CONNECTING,
+  STATE_WIFI_STATUS,
   STATE_BT_SCAN,
   STATE_BRIGHTNESS,
   STATE_BT_LIST,
@@ -56,11 +60,12 @@ enum State {
 State currentState = STATE_HOME;
 int menuIndex = 0;
 const int menuCount = 4;
-const char *menuItems[] = {"SYS INFO", "WIFI SCAN", "BT SCAN", "BRIGHTNESS"};
+const char *menuItems[] = {"SYS INFO", "WIFI", "BT SCAN", "BRIGHTNESS"};
 
 // Forward declarations
 void drawTopBar();
 void disconnectOBD();
+void showWifiStatus();
 
 // Brightness
 int currentBrightness = 128; // 0-255
@@ -128,6 +133,27 @@ unsigned long lastTapTime = 0;
 
 // Set up raw touch storage for debugging
 int lastRawX = 0, lastRawY = 0;
+
+// WiFi Management variables
+#define MAX_WIFI_NETWORKS 20
+struct CachedWifi {
+  String ssid;
+  int rssi;
+  bool encrypted;
+};
+CachedWifi wifiNetworks[MAX_WIFI_NETWORKS];
+int wifiCount = 0;
+int wifiSelectedIndex = 0;
+bool wifiAPActive = false;
+String wifiPassword = "";
+String wifiTargetSSID = "";
+
+// Keyboard layout
+const char* kbRowsLower[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
+const char* kbRowsUpper[] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+const char* kbRowsNum[]   = {"1234567890", "-/:;()&@\"", ".,?!'"};
+bool kbShift = false;
+bool kbNumbers = false;
 
 // Official Waveshare JD9853 Initialisation Sequence
 void lcd_reg_init(void) {
@@ -582,44 +608,264 @@ void drawTopBar() {
   }
 }
 
-void runWifiScan() {
+// =================================================================================
+// WiFi Management UI Functions
+// =================================================================================
+
+void showWifiMenu() {
   gfx->fillScreen(BLACK);
   drawTopBar();
   gfx->setFont(&FreeSans12pt7b);
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
-  gfx->setCursor(106, 35);
-  gfx->println("WIFI SCAN");
+  gfx->setCursor(125, 35);
+  gfx->print("WIFI");
   gfx->drawLine(0, 40, 320, 40, WHITE);
+
+  // AP Mode button
+  uint16_t apColor = wifiAPActive ? GREEN : WHITE;
+  gfx->drawRoundRect(30, 50, 260, 28, 6, apColor);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(apColor);
+  gfx->setCursor(100, 70);
+  gfx->print(wifiAPActive ? "AP MODE: ON" : "AP MODE: OFF");
+
+  // Client Mode button
+  gfx->drawRoundRect(30, 88, 260, 28, 6, WHITE);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(WHITE);
+  gfx->setCursor(85, 108);
+  gfx->print("CLIENT MODE");
+
+  // Status button
+  gfx->drawRoundRect(30, 126, 260, 28, 6, CYAN);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(CYAN);
+  gfx->setCursor(120, 146);
+  gfx->print("STATUS");
+}
+
+void showWifiList(bool fullRedraw = true) {
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    drawTopBar();
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW);
+    gfx->setTextSize(1);
+    gfx->setCursor(95, 35);
+    gfx->print("WIFI LIST");
+    gfx->drawLine(0, 40, 320, 40, WHITE);
+  }
+
+  if (wifiCount == 0) {
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(RED);
+    gfx->setCursor(80, 100);
+    gfx->print("No networks found");
+    return;
+  }
+
+  // Clear dynamic area
+  gfx->fillRect(0, 45, 320, 130, BLACK);
+
+  // Navigation arrows
+  gfx->setFont(&FreeSans18pt7b);
+  gfx->setTextColor(CYAN);
+  gfx->setCursor(5, 80);
+  gfx->print("\x11"); // Left triangle
+  gfx->setCursor(295, 80);
+  gfx->print("\x10"); // Right triangle
+
+  // Network name
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
   gfx->setTextSize(1);
-  gfx->setCursor(10, 65);
-  gfx->println("Scanning...");
+  String dispName = wifiNetworks[wifiSelectedIndex].ssid;
+  if (dispName.length() > 22) dispName = dispName.substring(0, 20) + "..";
+  int16_t tx = 160 - (dispName.length() * 5);
+  if (tx < 35) tx = 35;
+  gfx->setCursor(tx, 70);
+  gfx->print(dispName.c_str());
 
-  int n = WiFi.scanNetworks();
+  // RSSI and lock indicator
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF);
+  gfx->setCursor(100, 92);
+  gfx->printf("RSSI: %d dBm %s", wifiNetworks[wifiSelectedIndex].rssi,
+              wifiNetworks[wifiSelectedIndex].encrypted ? "[LOCKED]" : "[OPEN]");
+
+  // Index
+  gfx->setCursor(130, 108);
+  gfx->printf("%d / %d", wifiSelectedIndex + 1, wifiCount);
+
+  // Connect button
+  gfx->fillRoundRect(90, 120, 140, 30, 8, GREEN);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(BLACK);
+  gfx->setCursor(120, 141);
+  gfx->print("CONNECT");
+}
+
+void showWifiKeyboard() {
+  gfx->fillScreen(BLACK);
+
+  // Password display bar
+  gfx->fillRect(0, 0, 320, 24, 0x18E3); // Dark gray bar
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(WHITE);
+  gfx->setTextSize(1);
+  gfx->setCursor(5, 17);
+  String displayPw = wifiPassword;
+  if (displayPw.length() > 28) displayPw = displayPw.substring(displayPw.length() - 28);
+  gfx->print(displayPw.c_str());
+  gfx->setTextColor(CYAN);
+  gfx->print("_");
+
+  // Draw keyboard
+  const char** rows = kbNumbers ? kbRowsNum : (kbShift ? kbRowsUpper : kbRowsLower);
+  int keyW = 28, keyH = 28;
+  int startYkb = 28;
+
+  for (int r = 0; r < 3; r++) {
+    int rowLen = strlen(rows[r]);
+    int rowStartX = (320 - rowLen * keyW) / 2;
+    for (int c = 0; c < rowLen; c++) {
+      int kx = rowStartX + c * keyW;
+      int ky = startYkb + r * (keyH + 4);
+      gfx->drawRoundRect(kx, ky, keyW - 2, keyH, 4, 0x7BEF);
+      gfx->setFont(&FreeSans9pt7b);
+      gfx->setTextColor(WHITE);
+      gfx->setCursor(kx + 7, ky + 20);
+      char ch[2] = {rows[r][c], 0};
+      gfx->print(ch);
+    }
+  }
+
+  // Bottom row: Shift/123, Space, Backspace, OK
+  int btnY = startYkb + 3 * (keyH + 4);
+
+  // Shift / 123 button
+  gfx->drawRoundRect(5, btnY, 55, keyH, 4, YELLOW);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(YELLOW);
+  gfx->setCursor(12, btnY + 20);
+  gfx->print(kbNumbers ? "abc" : (kbShift ? "abc" : "123"));
+
+  // Space bar
+  gfx->drawRoundRect(65, btnY, 120, keyH, 4, 0x7BEF);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF);
+  gfx->setCursor(100, btnY + 20);
+  gfx->print("SPACE");
+
+  // Backspace
+  gfx->drawRoundRect(190, btnY, 55, keyH, 4, RED);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(RED);
+  gfx->setCursor(200, btnY + 20);
+  gfx->print("DEL");
+
+  // OK button
+  gfx->fillRoundRect(250, btnY, 65, keyH, 4, GREEN);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(BLACK);
+  gfx->setCursor(268, btnY + 20);
+  gfx->print("OK");
+}
+
+void connectToWifi() {
+  currentState = STATE_WIFI_CONNECTING;
   gfx->fillScreen(BLACK);
   drawTopBar();
   gfx->setFont(&FreeSans12pt7b);
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
-  gfx->setCursor(106, 35);
-  gfx->println("WIFI LIST");
-  gfx->drawLine(0, 40, 320, 40, WHITE);
+  gfx->setCursor(70, 80);
+  gfx->print("Connecting...");
   gfx->setFont(&FreeSans9pt7b);
-  if (n == 0) {
-    gfx->setTextColor(RED);
-    gfx->setCursor(10, 65);
-    gfx->println("No networks");
+  gfx->setTextColor(WHITE);
+  gfx->setCursor(50, 110);
+  gfx->print(wifiTargetSSID.c_str());
+
+  WiFi.mode(WIFI_STA);
+  if (wifiPassword.length() > 0)
+    WiFi.begin(wifiTargetSSID.c_str(), wifiPassword.c_str());
+  else
+    WiFi.begin(wifiTargetSSID.c_str());
+
+  unsigned long startWait = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startWait < 12000) {
+    delay(500);
+    gfx->setTextColor(CYAN);
+    gfx->print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    gfx->fillRect(0, 120, 320, 30, BLACK);
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(GREEN);
+    gfx->setCursor(90, 140);
+    gfx->print("Connected!");
+    drawTopBar(); // Update WiFi icon
+    delay(1500);
+    currentState = STATE_WIFI_STATUS;
+    showWifiStatus();
   } else {
-    gfx->setTextColor(WHITE);
-    for (int i = 0; i < n && i < 6; ++i) {
-      gfx->setCursor(5, 65 + (i * 18));
-      gfx->printf("%s (%d)\n", WiFi.SSID(i).substring(0, 30).c_str(),
-                  WiFi.RSSI(i));
-    }
+    gfx->fillRect(0, 120, 320, 30, BLACK);
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(RED);
+    gfx->setCursor(70, 140);
+    gfx->print("Connection failed!");
+    delay(2000);
+    currentState = STATE_WIFI_MENU;
+    showWifiMenu();
   }
 }
+
+void showWifiStatus() {
+  gfx->fillScreen(BLACK);
+  drawTopBar();
+  gfx->setFont(&FreeSans12pt7b);
+  gfx->setTextColor(YELLOW);
+  gfx->setTextSize(1);
+  gfx->setCursor(80, 35);
+  gfx->print("WIFI STATUS");
+  gfx->drawLine(0, 40, 320, 40, WHITE);
+
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextSize(1);
+
+  if (wifiAPActive) {
+    gfx->setTextColor(GREEN);
+    gfx->setCursor(10, 65);
+    gfx->print("Mode: Access Point");
+
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(10, 90);
+    gfx->print("SSID: ZoEyee-Config");
+    gfx->setCursor(10, 115);
+    gfx->printf("IP: %s", WiFi.softAPIP().toString().c_str());
+  } else if (WiFi.status() == WL_CONNECTED) {
+    gfx->setTextColor(GREEN);
+    gfx->setCursor(10, 65);
+    gfx->print("Mode: Client (Connected)");
+
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(10, 90);
+    gfx->printf("SSID: %s", WiFi.SSID().c_str());
+    gfx->setCursor(10, 115);
+    gfx->printf("IP: %s", WiFi.localIP().toString().c_str());
+    gfx->setCursor(10, 140);
+    gfx->printf("GW: %s", WiFi.gatewayIP().toString().c_str());
+    gfx->setCursor(10, 165);
+    gfx->printf("RSSI: %d dBm", WiFi.RSSI());
+  } else {
+    gfx->setTextColor(RED);
+    gfx->setCursor(10, 90);
+    gfx->print("Not Connected");
+  }
+}
+
 
 void showBTList(bool fullRedraw = true);
 
@@ -1313,6 +1559,11 @@ void loop() {
               currentState = STATE_MENU;
               drawMenu();
             }
+          } else if (currentState == STATE_WIFI_LIST) {
+            if (wifiCount > 0) {
+              wifiSelectedIndex = (wifiSelectedIndex - 1 + wifiCount) % wifiCount;
+              showWifiList(false);
+            }
           } else if (currentState == STATE_BT_DEVICE_INFO) {
             currentState = STATE_BT_LIST;
             showBTList();
@@ -1330,6 +1581,11 @@ void loop() {
                   (btSelectedDeviceIndex + 1) % btTotalDevices;
               showBTList(false);
             }
+          } else if (currentState == STATE_WIFI_LIST) {
+            if (wifiCount > 0) {
+              wifiSelectedIndex = (wifiSelectedIndex + 1) % wifiCount;
+              showWifiList(false);
+            }
           }
         } else if (abs(deltaX) < 15 && abs(deltaY) < 15) {
           if (startY < 40 && startX < 80) {
@@ -1339,6 +1595,12 @@ void loop() {
             } else if (currentState == STATE_BT_DEVICE_INFO) {
               currentState = STATE_BT_LIST;
               showBTList();
+            } else if (currentState == STATE_WIFI_LIST) {
+              currentState = STATE_WIFI_MENU;
+              showWifiMenu();
+            } else if (currentState == STATE_WIFI_MENU || currentState == STATE_WIFI_STATUS || currentState == STATE_WIFI_KEYBOARD) {
+              currentState = STATE_MENU;
+              drawMenu();
             } else if (currentState != STATE_HOME) {
               currentState = STATE_MENU;
               drawMenu();
@@ -1349,8 +1611,8 @@ void loop() {
                 currentState = STATE_INFO;
                 showInfo();
               } else if (menuIndex == 1) {
-                currentState = STATE_WIFI_SCAN;
-                runWifiScan();
+                currentState = STATE_WIFI_MENU;
+                showWifiMenu();
               } else if (menuIndex == 2) {
                 currentState = STATE_BT_SCAN;
                 runBLEScan();
@@ -1372,6 +1634,107 @@ void loop() {
                          startY <= 145) {
                 currentState = STATE_BT_DEVICE_INFO;
                 showBTDeviceInfo();
+              }
+            }
+          } else if (currentState == STATE_WIFI_MENU) {
+            // AP Mode button
+            if (startY >= 50 && startY <= 78) {
+              wifiAPActive = !wifiAPActive;
+              if (wifiAPActive) {
+                WiFi.mode(WIFI_AP);
+                WiFi.softAP("ZoEyee-Config");
+              } else {
+                WiFi.softAPdisconnect(true);
+                WiFi.mode(WIFI_OFF);
+              }
+              showWifiMenu();
+            }
+            // Client Mode button
+            else if (startY >= 88 && startY <= 116) {
+              // Run WiFi scan
+              gfx->fillScreen(BLACK);
+              drawTopBar();
+              gfx->setFont(&FreeSans12pt7b);
+              gfx->setTextColor(YELLOW);
+              gfx->setTextSize(1);
+              gfx->setCursor(80, 90);
+              gfx->print("Scanning...");
+              int n = WiFi.scanNetworks();
+              wifiCount = min(n, MAX_WIFI_NETWORKS);
+              for (int i = 0; i < wifiCount; i++) {
+                wifiNetworks[i].ssid = WiFi.SSID(i);
+                wifiNetworks[i].rssi = WiFi.RSSI(i);
+                wifiNetworks[i].encrypted = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+              }
+              wifiSelectedIndex = 0;
+              currentState = STATE_WIFI_LIST;
+              showWifiList();
+            }
+            // Status button
+            else if (startY >= 126 && startY <= 154) {
+              currentState = STATE_WIFI_STATUS;
+              showWifiStatus();
+            }
+          } else if (currentState == STATE_WIFI_LIST) {
+            // Connect button
+            if (startX >= 90 && startX <= 230 && startY >= 120 && startY <= 150 && wifiCount > 0) {
+              wifiTargetSSID = wifiNetworks[wifiSelectedIndex].ssid;
+              if (wifiNetworks[wifiSelectedIndex].encrypted) {
+                wifiPassword = "";
+                kbShift = false;
+                kbNumbers = false;
+                currentState = STATE_WIFI_KEYBOARD;
+                showWifiKeyboard();
+              } else {
+                wifiPassword = "";
+                connectToWifi();
+              }
+            }
+          } else if (currentState == STATE_WIFI_KEYBOARD) {
+            // Keyboard touch detection
+            const char** rows = kbNumbers ? kbRowsNum : (kbShift ? kbRowsUpper : kbRowsLower);
+            int keyW = 28, keyH = 28;
+            int startYkb = 28;
+            bool handled = false;
+            
+            for (int r = 0; r < 3 && !handled; r++) {
+              int rowLen = strlen(rows[r]);
+              int rowStartX = (320 - rowLen * keyW) / 2;
+              for (int c = 0; c < rowLen; c++) {
+                int kx = rowStartX + c * keyW;
+                int ky = startYkb + r * (keyH + 4);
+                if (startX >= kx && startX <= kx + keyW && startY >= ky && startY <= ky + keyH) {
+                  wifiPassword += rows[r][c];
+                  if (kbShift) kbShift = false; // Auto-off shift after one char
+                  showWifiKeyboard();
+                  handled = true;
+                  break;
+                }
+              }
+            }
+            
+            if (!handled) {
+              int btnY = startYkb + 3 * (keyH + 4);
+              if (startY >= btnY && startY <= btnY + keyH) {
+                if (startX >= 5 && startX <= 60) {
+                  // Shift / 123 toggle
+                  if (kbNumbers) { kbNumbers = false; }
+                  else if (kbShift) { kbShift = false; kbNumbers = true; }
+                  else { kbShift = true; }
+                  showWifiKeyboard();
+                } else if (startX >= 65 && startX <= 185) {
+                  // Space
+                  wifiPassword += ' ';
+                  showWifiKeyboard();
+                } else if (startX >= 190 && startX <= 245) {
+                  // Backspace
+                  if (wifiPassword.length() > 0)
+                    wifiPassword.remove(wifiPassword.length() - 1);
+                  showWifiKeyboard();
+                } else if (startX >= 250 && startX <= 315) {
+                  // OK → connect
+                  connectToWifi();
+                }
               }
             }
           } else {
