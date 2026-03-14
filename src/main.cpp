@@ -565,9 +565,9 @@ void drawTopBar() {
   else if (isWifiAP) wifiColor = GREEN;
   
   if (isWifiAP) {
-    gfx->drawXBitmap(270, 7, icon_ap_bits, icon_ap_width, icon_ap_height, wifiColor);
+    gfx->drawXBitmap(273, 7, icon_ap_bits, icon_ap_width, icon_ap_height, wifiColor);
   } else {
-    gfx->drawXBitmap(266, 2, icon_wifi_bits, icon_wifi_width, icon_wifi_height, wifiColor);
+    gfx->drawXBitmap(272, 2, icon_wifi_bits, icon_wifi_width, icon_wifi_height, wifiColor);
   }
 
   // Bluetooth Icon
