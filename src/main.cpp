@@ -9,6 +9,7 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
+#include <math.h>
 
 /*
  * Pinout for Waveshare ESP32-C6-Touch-LCD-1.47
@@ -62,7 +63,7 @@ enum State {
 State currentState = STATE_HOME;
 int menuIndex = 0;
 const int menuCount = 4;
-const char *menuItems[] = {"SYS INFO", "WIFI", "BT SCAN", "BRIGHTNESS"};
+const char *menuItems[] = {"INFO", "WIFI", "BT SCAN", "BRIGHTNESS"};
 
 // Forward declarations
 void drawTopBar(bool softRefresh = false);
@@ -504,24 +505,65 @@ void drawMenu(bool fullRedraw = true) {
   // Expand clearing rectangle to ensure long text like "BRIGHTNESS" is fully erased
   // Previous width was 240, starting at x=40. Let's make it start at 30 and width 260.
   // Also lower the Y starting point slightly to clear the taller text completely.
-  gfx->fillRect(28, 50, 264, 60, BLACK);
+  // Clearing rectangle: covers text + icon area
+  gfx->fillRect(28, 50, 264, 110, BLACK);
   
   gfx->setFont(&FreeSans18pt7b);
   gfx->setTextColor(WHITE, BLACK);
   gfx->setTextSize(1);
   int textX = 160 - (strlen(menuItems[menuIndex]) * 9); 
-  if (menuIndex == 0) textX = 85;
-  else if (menuIndex == 1) textX = 120;  // "WIFI" (short)
-  else if (menuIndex == 2) textX = 90;
-  else if (menuIndex == 3) textX = 60;
+  if (menuIndex == 0) textX = 138;  // "INFO" (short)
+  else if (menuIndex == 1) textX = 120;  // "WIFI"
+  else if (menuIndex == 2) textX = 90;   // "BT SCAN"
+  else if (menuIndex == 3) textX = 60;   // "BRIGHTNESS"
   // Move text down from 95 to 110 to align exactly between the triangles (Y: 90 to 110, center 100)
   // For FreeSans18pt, the baseline is the Y coordinate.
   gfx->setCursor(textX, 108);
   gfx->print(menuItems[menuIndex]);
+
+  // Icon below the menu text
+  int iconX = 160, iconY = 145;
+  if (menuIndex == 0) {
+    // INFO: Blue filled circle with white "i"
+    gfx->fillCircle(iconX, iconY, 14, BLUE);
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(iconX - 3, iconY + 6);
+    gfx->print("i");
+  } else if (menuIndex == 1) {
+    // WIFI: 4 arcs drawn as filled rectangles (signal bars)
+    int bx = iconX - 14, by = iconY + 8;
+    for (int b = 0; b < 4; b++) {
+      int bh = 5 + b * 7;
+      gfx->fillRect(bx + b * 10, by - bh, 7, bh, CYAN);
+    }
+  } else if (menuIndex == 2) {
+    // BT SCAN: Blue pill shape with white bluetooth symbol (matching the reference image)
+    gfx->fillRoundRect(iconX - 12, iconY - 16, 24, 32, 12, 0x019B); // BT Blue pill
+    // Thicker bluetooth shape
+    for (int i = 0; i < 2; i++) {
+      gfx->drawLine(iconX + i, iconY - 10, iconX + i, iconY + 10, WHITE);
+      gfx->drawLine(iconX + i, iconY - 10, iconX + 7 + i, iconY - 3, WHITE);
+      gfx->drawLine(iconX + 7 + i, iconY - 3, iconX - 5 + i, iconY + 5, WHITE);
+      gfx->drawLine(iconX - 5 + i, iconY - 5, iconX + 7 + i, iconY + 3, WHITE);
+      gfx->drawLine(iconX + 7 + i, iconY + 3, iconX + i, iconY + 10, WHITE);
+    }
+  } else if (menuIndex == 3) {
+    // BRIGHTNESS: Yellow sun circle + rays
+    gfx->fillCircle(iconX, iconY, 8, YELLOW);
+    for (int a = 0; a < 8; a++) {
+      float angle = a * 3.14159f / 4.0f;
+      int x1 = iconX + (int)(11 * cos(angle));
+      int y1 = iconY + (int)(11 * sin(angle));
+      int x2 = iconX + (int)(16 * cos(angle));
+      int y2 = iconY + (int)(16 * sin(angle));
+      gfx->drawLine(x1, y1, x2, y2, YELLOW);
+    }
+  }
 }
 
 void showBrightness(bool fullRedraw = true) {
-  int sliderY = 40;
+  int sliderY = 50;   // moved down from 40 so it doesn't touch the menu line
   int sliderX = 140;
   int sliderW = 40;
   int sliderH = 100;
@@ -535,11 +577,18 @@ void showBrightness(bool fullRedraw = true) {
     gfx->println("BRIGHTNESS");
     gfx->drawLine(0, 40, 320, 40, WHITE);
     gfx->drawRect(sliderX, sliderY, sliderW, sliderH, WHITE);
+    // Left-side hint
     gfx->setFont(&FreeSans9pt7b);
-    gfx->setTextColor(CYAN, BLACK);
+    gfx->setTextColor(0x7BEF, BLACK);
     gfx->setTextSize(1);
-    gfx->setCursor(10, 165);
-    gfx->println("Swipe Right -> Back");
+    gfx->setCursor(5, 75);
+    gfx->print("Swipe up/down");
+    gfx->setCursor(5, 95);
+    gfx->print("anywhere to");
+    gfx->setCursor(5, 115);
+    gfx->print("adjust");
+    gfx->setCursor(5, 135);
+    gfx->print("brightness.");
   }
   int fillH = map(currentBrightness, 0, 255, 0, sliderH - 4);
   if (fillH > 0)
@@ -562,8 +611,8 @@ void showInfo() {
   gfx->setFont(&FreeSans12pt7b);
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
-  gfx->setCursor(112, 35);
-  gfx->println("SYS INFO");
+  gfx->setCursor(128, 35);
+  gfx->println("INFO");
   gfx->drawLine(0, 40, 320, 40, WHITE);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
