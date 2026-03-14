@@ -574,11 +574,11 @@ void drawTopBar() {
   uint16_t btColor = isBluetoothConnected ? 0x03FF : 0x7BEF; // Világosabb kék ha csatlakozva, amúgy szürke
   gfx->drawXBitmap(294, 4, icon_bt_bits, icon_bt_width, icon_bt_height, btColor);
 
-  // OBD (Car) Icon
+  // OBD (CAN) Icon
   if (isBluetoothConnected && lastOBDRxTime > 0 && millis() - lastOBDRxTime < 10000) {
-    gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, GREEN);
+    gfx->drawXBitmap(242, 4, icon_can_bits, icon_can_width, icon_can_height, GREEN);
   } else {
-    gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, 0x7BEF);
+    gfx->drawXBitmap(242, 4, icon_can_bits, icon_can_width, icon_can_height, 0x7BEF);
   }
 }
 
