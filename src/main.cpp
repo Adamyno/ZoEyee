@@ -89,6 +89,8 @@ static char obdBuffer[256];
 static int obdBufIndex = 0;
 String lastOBDValue = "";
 unsigned long lastOBDPollTime = 0;
+unsigned long lastOBDRxTime = 0;  // OBD adat érkezés (car icon zöld / heartbeat)
+bool obdHeartbeatLit = false;
 const unsigned long OBD_POLL_INTERVAL = 2000; // ms between polls
 volatile bool bleDisconnectedFlag = false;
 
@@ -571,6 +573,15 @@ void drawTopBar() {
   // Bluetooth Icon
   uint16_t btColor = isBluetoothConnected ? 0x03FF : 0x7BEF; // Világosabb kék ha csatlakozva, amúgy szürke
   gfx->drawXBitmap(294, 4, icon_bt_bits, icon_bt_width, icon_bt_height, btColor);
+
+  // OBD (Car) Icon
+  if (isBluetoothConnected) {
+    if (lastOBDRxTime > 0 && millis() - lastOBDRxTime < 10000) {
+      gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, GREEN);
+    } else {
+      gfx->drawXBitmap(242, 2, icon_car_bits, icon_car_width, icon_car_height, 0x7BEF);
+    }
+  }
 }
 
 void runWifiScan() {
@@ -1439,6 +1450,11 @@ void loop() {
 
     // Válasz feldolgozás
     if (lastOBDValue.length() > 0) {
+      // Heartbeat bekapcsolása & időbélyeg frissítése
+      lastOBDRxTime = millis();
+      gfx->fillCircle(234, 10, 3, GREEN);
+      obdHeartbeatLit = true;
+
       String resp = lastOBDValue;
       Serial.printf("[ZOE] Feldolgozás: '%s'\n", resp.c_str());
 
@@ -1465,5 +1481,12 @@ void loop() {
       updateHomeOBD();
     }
   }
+
+  // Heartbeat villogás takarítása
+  if (obdHeartbeatLit && millis() - lastOBDRxTime > 150) {
+    obdHeartbeatLit = false;
+    gfx->fillCircle(234, 10, 3, BLACK); // Eltüntetjük a zöld pöttyöt
+  }
+
   delay(20);
 }
