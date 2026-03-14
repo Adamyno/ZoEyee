@@ -63,7 +63,7 @@ const int menuCount = 4;
 const char *menuItems[] = {"SYS INFO", "WIFI", "BT SCAN", "BRIGHTNESS"};
 
 // Forward declarations
-void drawTopBar();
+void drawTopBar(bool softRefresh = false);
 void disconnectOBD();
 void showWifiStatus();
 
@@ -488,8 +488,8 @@ void drawMenu(bool fullRedraw = true) {
     gfx->setFont(&FreeSans12pt7b);
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
-    gfx->setCursor(106, 35);
-    gfx->println("MAIN MENU");
+    gfx->setCursor(125, 35);
+    gfx->println("MENU");
     gfx->drawLine(0, 40, 320, 40, WHITE);
     gfx->setFont(&FreeSans18pt7b);
     gfx->setTextColor(CYAN, BLACK);
@@ -573,15 +573,20 @@ void showInfo() {
   gfx->printf("Heap: %u KB\n", ESP.getFreeHeap() / 1024);
 }
 
-void drawTopBar() {
-  gfx->fillRect(0, 0, 320, 20, BLACK);
-  if (currentState == STATE_MENU) {
-    gfx->fillTriangle(15, 2, 5, 11, 25, 11, WHITE);
-    gfx->fillRect(10, 11, 10, 8, WHITE);
-    gfx->fillRect(13, 15, 4, 4, BLACK);
-  } else if (currentState != STATE_HOME) {
-    gfx->fillTriangle(5, 10, 15, 4, 15, 16, WHITE);
-    gfx->fillRect(15, 8, 6, 4, WHITE);
+void drawTopBar(bool softRefresh) {
+  if (!softRefresh) {
+    gfx->fillRect(0, 0, 320, 20, BLACK);
+    if (currentState == STATE_MENU) {
+      gfx->fillTriangle(15, 2, 5, 11, 25, 11, WHITE);
+      gfx->fillRect(10, 11, 10, 8, WHITE);
+      gfx->fillRect(13, 15, 4, 4, BLACK);
+    } else if (currentState != STATE_HOME) {
+      gfx->fillTriangle(5, 10, 15, 4, 15, 16, WHITE);
+      gfx->fillRect(15, 8, 6, 4, WHITE);
+    }
+  } else {
+    // Only clear the right side (icons) during a soft refresh to avoid clipping the menu title
+    gfx->fillRect(240, 0, 80, 20, BLACK);
   }
   // WiFi Signal Bars (live strength indicator)
   bool isWifiConnected = (WiFi.status() == WL_CONNECTED);
@@ -1831,10 +1836,39 @@ void loop() {
 
   // Periodic top bar refresh (WiFi signal bars update)
   static unsigned long lastTopBarRefresh = 0;
-  if (millis() - lastTopBarRefresh > 2000) {
+  static int lastWifiRssi = 0;
+  static bool lastWifiConnected = false;
+  static bool lastWifiAP = false;
+  static bool lastBtConnected = false;
+  static bool lastCanActive = false;
+
+  if (millis() - lastTopBarRefresh > 1000) {
     lastTopBarRefresh = millis();
-    if (currentState == STATE_HOME || currentState == STATE_MENU) {
-      drawTopBar();
+    bool isWifiConn = (WiFi.status() == WL_CONNECTED);
+    bool isWifiAP = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+    int currentRssi = isWifiConn ? WiFi.RSSI() : 0;
+    
+    // Evaluate if redraw is needed based on visual changes
+    int oldBars = (lastWifiRssi > -50) ? 4 : (lastWifiRssi > -65) ? 3 : (lastWifiRssi > -75) ? 2 : 1;
+    int newBars = (currentRssi > -50) ? 4 : (currentRssi > -65) ? 3 : (currentRssi > -75) ? 2 : 1;
+    bool canActive = (isBluetoothConnected && lastOBDRxTime > 0 && millis() - lastOBDRxTime < 10000);
+
+    bool needsRefresh = false;
+    if (isWifiConn != lastWifiConnected || isWifiAP != lastWifiAP) needsRefresh = true;
+    if (isWifiConn && oldBars != newBars) needsRefresh = true;
+    if (isBluetoothConnected != lastBtConnected) needsRefresh = true;
+    if (canActive != lastCanActive) needsRefresh = true;
+
+    if (needsRefresh) {
+      lastWifiConnected = isWifiConn;
+      lastWifiAP = isWifiAP;
+      lastWifiRssi = currentRssi;
+      lastBtConnected = isBluetoothConnected;
+      lastCanActive = canActive;
+      
+      if (currentState == STATE_HOME || currentState == STATE_MENU) {
+        drawTopBar(true); // Soft refresh
+      }
     }
   }
 
