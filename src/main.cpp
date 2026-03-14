@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include "ZoeLogo.h"
+#include "Icons.h"
 
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
@@ -554,14 +555,22 @@ void drawTopBar() {
     gfx->fillTriangle(5, 10, 15, 4, 15, 16, WHITE);
     gfx->fillRect(15, 8, 6, 4, WHITE);
   }
-  if (isBluetoothConnected) {
-    gfx->fillRoundRect(294, 2, 18, 16, 6, BLUE);
-    gfx->setFont(&FreeSans9pt7b);
-    gfx->setTextColor(WHITE);
-    gfx->setTextSize(1);
-    gfx->setCursor(298, 15);
-    gfx->print("B");
+  // WiFi Icon
+  bool isWifiConnected = (WiFi.status() == WL_CONNECTED);
+  bool isWifiAP = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+  uint16_t wifiColor = 0x7BEF; // Halvány szürke placeholder
+  if (isWifiConnected) wifiColor = WHITE;
+  else if (isWifiAP) wifiColor = GREEN;
+  
+  if (isWifiAP) {
+    gfx->drawXBitmap(270, 7, icon_ap_bits, icon_ap_width, icon_ap_height, wifiColor);
+  } else {
+    gfx->drawXBitmap(266, 2, icon_wifi_bits, icon_wifi_width, icon_wifi_height, wifiColor);
   }
+
+  // Bluetooth Icon
+  uint16_t btColor = isBluetoothConnected ? 0x03FF : 0x7BEF; // Világosabb kék ha csatlakozva, amúgy szürke
+  gfx->drawXBitmap(294, 4, icon_bt_bits, icon_bt_width, icon_bt_height, btColor);
 }
 
 void runWifiScan() {
