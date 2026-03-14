@@ -422,16 +422,16 @@ void showHome() {
     if (obd12V.length() > 0) { gfx->setCursor(60, 130); gfx->print(obd12V.c_str()); }
     else { gfx->setCursor(60, 130); gfx->print("--"); }
 
-    // Státusz sor
-    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0x4208); gfx->setTextSize(1);
+    // Státusz sor (Sötétebb narancs: 0xFB40)
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0xFB40); gfx->setTextSize(1);
     gfx->setCursor(10, 165); gfx->print("Double tap for menu");
   } else {
     gfx->setFont(&FreeSans18pt7b); gfx->setTextColor(RED); gfx->setTextSize(1);
     gfx->setCursor(35, 90); gfx->print("No Connection");
     gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(WHITE); gfx->setTextSize(1);
     gfx->setCursor(50, 130); gfx->print("Connect via BT SCAN");
-    // Státusz sor
-    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0x4208); gfx->setTextSize(1);
+    // Státusz sor (Sötétebb narancs: 0xFB40)
+    gfx->setFont(&FreeSans9pt7b); gfx->setTextColor(0xFB40); gfx->setTextSize(1);
     gfx->setCursor(10, 165); gfx->print("Double tap for menu");
   }
 }
@@ -1203,7 +1203,22 @@ void setup(void) {
 
   // Draw Boot Logo
   gfx->fillScreen(BLACK);
-  gfx->drawXBitmap(32, 32, zoe256_bits, zoe256_width, zoe256_height, WHITE);
+  // Pozicionálás: 320x172 kijelzőn közepelve (zoe256: 256x106)
+  gfx->drawXBitmap(32, 15, zoe256_bits, zoe256_width, zoe256_height, WHITE);
+  
+  // ZoEyee felirat
+  gfx->setFont(&FreeSans12pt7b);
+  gfx->setTextColor(CYAN);
+  gfx->setTextSize(1);
+  gfx->setCursor(115, 140);
+  gfx->print("ZoEyee");
+
+  // Verziószám
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF); // Világosszürke
+  gfx->setCursor(105, 162);
+  gfx->print(SW_VERSION);
+
   delay(5000);
 
   showHome();
