@@ -587,7 +587,7 @@ void drawTopBar() {
   bool isWifiConnected = (WiFi.status() == WL_CONNECTED);
   bool isWifiAP = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
   uint16_t wifiColor = 0x7BEF; // Halvány szürke placeholder
-  if (isWifiConnected) wifiColor = WHITE;
+  if (isWifiConnected) wifiColor = GREEN;
   else if (isWifiAP) wifiColor = GREEN;
   
   if (isWifiAP) {
@@ -618,7 +618,7 @@ void showWifiMenu() {
   gfx->setFont(&FreeSans12pt7b);
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
-  gfx->setCursor(125, 35);
+  gfx->setCursor(134, 35);
   gfx->print("WIFI");
   gfx->drawLine(0, 40, 320, 40, WHITE);
 
@@ -687,12 +687,24 @@ void showWifiList(bool fullRedraw = true) {
   gfx->setCursor(tx, 70);
   gfx->print(dispName.c_str());
 
-  // RSSI and lock indicator
-  gfx->setFont(&FreeSans9pt7b);
-  gfx->setTextColor(0x7BEF);
-  gfx->setCursor(100, 92);
-  gfx->printf("RSSI: %d dBm %s", wifiNetworks[wifiSelectedIndex].rssi,
-              wifiNetworks[wifiSelectedIndex].encrypted ? "[LOCKED]" : "[OPEN]");
+  // Signal strength bars
+  int rssi = wifiNetworks[wifiSelectedIndex].rssi;
+  int bars = (rssi > -50) ? 4 : (rssi > -65) ? 3 : (rssi > -75) ? 2 : 1;
+  int barX = 110;
+  int barBaseY = 98;
+  for (int b = 0; b < 4; b++) {
+    int barH = 4 + b * 4;
+    uint16_t barColor = (b < bars) ? CYAN : 0x3186;
+    gfx->fillRect(barX + b * 8, barBaseY - barH, 5, barH, barColor);
+  }
+
+  // Lock icon (if encrypted)
+  if (wifiNetworks[wifiSelectedIndex].encrypted) {
+    int lockX = barX + 42;
+    int lockY = barBaseY - 14;
+    gfx->fillRect(lockX, lockY + 5, 10, 7, 0xFBE0); // Narancs test
+    gfx->drawRoundRect(lockX + 1, lockY, 8, 7, 3, 0xFBE0); // Félkör szár
+  }
 
   // Index
   gfx->setCursor(130, 108);
@@ -749,7 +761,9 @@ void showWifiKeyboard() {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(YELLOW);
   gfx->setCursor(12, btnY + 20);
-  gfx->print(kbNumbers ? "abc" : (kbShift ? "abc" : "123"));
+  if (kbNumbers) gfx->print("abc");
+  else if (kbShift) gfx->print("123");
+  else gfx->fillTriangle(20, btnY + 22, 32, btnY + 6, 44, btnY + 22, YELLOW); // Shift arrow
 
   // Space bar
   gfx->drawRoundRect(65, btnY, 120, keyH, 4, 0x7BEF);
@@ -758,12 +772,20 @@ void showWifiKeyboard() {
   gfx->setCursor(100, btnY + 20);
   gfx->print("SPACE");
 
-  // Backspace
-  gfx->drawRoundRect(190, btnY, 55, keyH, 4, RED);
-  gfx->setFont(&FreeSans9pt7b);
-  gfx->setTextColor(RED);
-  gfx->setCursor(200, btnY + 20);
-  gfx->print("DEL");
+  // Backspace / Back
+  if (wifiPassword.length() == 0) {
+    gfx->fillRoundRect(190, btnY, 55, keyH, 4, RED);
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(193, btnY + 20);
+    gfx->print("BACK");
+  } else {
+    gfx->drawRoundRect(190, btnY, 55, keyH, 4, RED);
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(RED);
+    gfx->setCursor(200, btnY + 20);
+    gfx->print("DEL");
+  }
 
   // OK button
   gfx->fillRoundRect(250, btnY, 65, keyH, 4, GREEN);
@@ -1598,9 +1620,12 @@ void loop() {
             } else if (currentState == STATE_WIFI_LIST) {
               currentState = STATE_WIFI_MENU;
               showWifiMenu();
-            } else if (currentState == STATE_WIFI_MENU || currentState == STATE_WIFI_STATUS || currentState == STATE_WIFI_KEYBOARD) {
+            } else if (currentState == STATE_WIFI_MENU || currentState == STATE_WIFI_STATUS) {
               currentState = STATE_MENU;
               drawMenu();
+            } else if (currentState == STATE_WIFI_KEYBOARD) {
+              // Keyboard: ne lépjen ki a bal felső sarokra koppintva!
+              // A BACK gombot kell használni (DEL-en ha üres a jelszó)
             } else if (currentState != STATE_HOME) {
               currentState = STATE_MENU;
               drawMenu();
@@ -1717,8 +1742,8 @@ void loop() {
               int btnY = startYkb + 3 * (keyH + 4);
               if (startY >= btnY && startY <= btnY + keyH) {
                 if (startX >= 5 && startX <= 60) {
-                  // Shift / 123 toggle
-                  if (kbNumbers) { kbNumbers = false; }
+                  // Shift / 123 toggle: lowercase→Shift, Shift→123, 123→lowercase
+                  if (kbNumbers) { kbNumbers = false; kbShift = false; }
                   else if (kbShift) { kbShift = false; kbNumbers = true; }
                   else { kbShift = true; }
                   showWifiKeyboard();
@@ -1727,10 +1752,15 @@ void loop() {
                   wifiPassword += ' ';
                   showWifiKeyboard();
                 } else if (startX >= 190 && startX <= 245) {
-                  // Backspace
-                  if (wifiPassword.length() > 0)
+                  // Backspace or BACK
+                  if (wifiPassword.length() > 0) {
                     wifiPassword.remove(wifiPassword.length() - 1);
-                  showWifiKeyboard();
+                    showWifiKeyboard();
+                  } else {
+                    // BACK: return to WiFi list
+                    currentState = STATE_WIFI_LIST;
+                    showWifiList();
+                  }
                 } else if (startX >= 250 && startX <= 315) {
                   // OK → connect
                   connectToWifi();
