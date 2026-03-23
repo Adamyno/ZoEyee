@@ -37,7 +37,7 @@ int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit, i
   int startByte = startBit / 8;
   int endByte = endBit / 8;
   
-  if (fullHex.length() < (endByte + 1) * 2) {
+  if (fullHex.length() < (unsigned int)(endByte + 1) * 2) {
     return -1; // Nincs elég adat
   }
   
@@ -188,18 +188,20 @@ bool ObdManager::initOBD() {
   gfx->setCursor(50, 75);
   gfx->print("Setting up CAN...");
 
-  sendCommand("ATSP6");
-  delay(500);
-  lastOBDValue = "";
-  sendCommand("ATSH7E4");
-  delay(300);
-  lastOBDValue = "";
-  sendCommand("ATCRA7EC");
-  delay(300);
-  lastOBDValue = "";
-  sendCommand("10C0");
-  delay(500);
-  lastOBDValue = "";
+  sendCommand("ATSP6"); delay(500); lastOBDValue = "";
+  
+  // ========================================================
+  // FLOW CONTROL ALAPBEÁLLÍTÁSOK A MULTI-FRAME ÜZENETEKHEZ
+  // ========================================================
+  sendCommand("ATFCSD300000"); delay(300); lastOBDValue = ""; // FC Data
+  sendCommand("ATFCSM1"); delay(300); lastOBDValue = "";      // FC Mode 1
+  
+  // Alapértelmezett ECU (EVC) megcélzása
+  sendCommand("ATSH7E4"); delay(300); lastOBDValue = "";
+  sendCommand("ATCRA7EC"); delay(300); lastOBDValue = "";
+  sendCommand("ATFCSH7E4"); delay(300); lastOBDValue = "";    // FC Header az EVC-hez
+  
+  sendCommand("10C0"); delay(500); lastOBDValue = "";
 
   obdZoeMode = true;
   obdPollIndex = 0;
@@ -232,28 +234,25 @@ void ObdManager::processPolling() {
     lastOBDSentTime = now;
     obdResponsePending = true;
     if (obdZoeMode) {
-      if (obdPollIndex == 0) {
-        sendCommand("ATSH7E4"); // EVC header
-      } else if (obdPollIndex == 1) {
-        sendCommand("ATCRA7EC");
-      } else if (obdPollIndex == 2) {
-        sendCommand("222002"); // SOC
-      } else if (obdPollIndex == 3) {
-        sendCommand("223206"); // SOH
-      } else if (obdPollIndex == 4) {
-        sendCommand("2233d8"); // Bat Temp
-      } else if (obdPollIndex == 5) {
-        sendCommand("ATSH744"); // HVAC header
-      } else if (obdPollIndex == 6) {
-        sendCommand("ATCRA764");
-      } else if (obdPollIndex == 7) {
-        sendCommand("222144"); // AC RPM
-      } else if (obdPollIndex == 8) {
-        sendCommand("222143"); // AC Pressure
-      } else if (obdPollIndex == 9) {
-        sendCommand("ATRV"); // 12V Battery
+      // 12 lépéses állapotgép a megfelelő Flow Control kezelés miatt
+      switch(obdPollIndex) {
+        // --- EVC (Battery) ECU lekérdezések ---
+        case 0: sendCommand("ATSH7E4"); break;
+        case 1: sendCommand("ATCRA7EC"); break;
+        case 2: sendCommand("ATFCSH7E4"); break; // FC fejléc
+        case 3: sendCommand("222002"); break;    // SOC
+        case 4: sendCommand("223206"); break;    // SOH
+        case 5: sendCommand("2233D8"); break;    // Bat Temp (JAVÍTVA: Nagy D!)
+        // --- HVAC (Climate) ECU lekérdezések ---
+        case 6: sendCommand("ATSH744"); break;
+        case 7: sendCommand("ATCRA764"); break;
+        case 8: sendCommand("ATFCSH744"); break; // FC fejléc a klímához!
+        case 9: sendCommand("222144"); break;    // AC RPM
+        case 10: sendCommand("222143"); break;   // AC Pressure
+        // --- Általános ---
+        case 11: sendCommand("ATRV"); break;     // 12V Battery
       }
-      obdPollIndex = (obdPollIndex + 1) % 10;
+      obdPollIndex = (obdPollIndex + 1) % 12;
     } else {
       sendCommand("ATRV");
     }
@@ -282,8 +281,9 @@ void ObdManager::processPolling() {
         obdSOH = raw;
         Serial.printf("[ZOE] SOH = %d%%\n", obdSOH);
       }
-    } else if (resp.indexOf("6233d8") >= 0 || resp.indexOf("62 33 d8") >= 0) {
-      int raw = parseUDSHex(resp, "6233d8", 1);
+    } else if (resp.indexOf("6233D8") >= 0 || resp.indexOf("62 33 D8") >= 0) {
+      // JAVÍTVA: Nagy D8-at keres a feltétel!
+      int raw = parseUDSHex(resp, "6233D8", 1);
       if (raw >= 0) {
         obdHVBatTemp = raw - 40;
         Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
