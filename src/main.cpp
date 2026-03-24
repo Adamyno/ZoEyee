@@ -42,8 +42,10 @@ void setup(void) {
   wifiAutoSave = preferences.getBool("auto", false);
   wifiTargetSSID = preferences.getString("ssid", "");
   wifiPassword = preferences.getString("pw", "");
+  
+  WiFi.mode(WIFI_STA); // Initialize LwIP networking stack unconditionally to avoid WebServer crash
+  
   if (wifiAutoSave && wifiTargetSSID.length() > 0) {
-    WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     if (wifiPassword.length() > 0)
       WiFi.begin(wifiTargetSSID.c_str(), wifiPassword.c_str());
