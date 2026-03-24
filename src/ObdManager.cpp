@@ -333,54 +333,47 @@ void ObdManager::readHvacBlocking() {
   String sessResp = sendAndWaitResponse("10C0", 2000);
   Serial.printf("[OBD] HVAC session resp: '%s'\n", sessResp.c_str());
 
-  // 5. Query 2143 – Cabin Temp & AC Pressure (multi-frame, needs 3s)
-  String resp2143 = sendAndWaitResponse("2143", 4000);
-  Serial.printf("[OBD] 2143 resp: '%s'\n", resp2143.c_str());
-  if (resp2143.indexOf("6143") >= 0 || resp2143.indexOf("61 43") >= 0) {
-    // In-Car Temp: bytes 13 and 14 (bits 104 to 119)
-    int rawCabin = parseUDSBits(resp2143, "6143", 104, 119);
+  // =================================================================
+  // 5. Query 2121 – Contains CABIN TEMP (CanZE: IH_InCarTemp)
+  //    Bits 26-35, resolution 0.1, offset 400 → (raw * 0.1) - 40.0
+  // =================================================================
+  String resp2121 = sendAndWaitResponse("2121", 4000);
+  Serial.printf("[OBD] 2121 resp: '%s'\n", resp2121.c_str());
+  if (resp2121.indexOf("6121") >= 0 || resp2121.indexOf("61 21") >= 0) {
+    // IH_InCarTemp: bits 26-35 (10 bits), formula: raw * 0.1 - 40.0
+    int rawCabin = parseUDSBits(resp2121, "6121", 26, 35);
     if (rawCabin >= 0) {
-      obdCabinTemp = rawCabin / 10.0f;
-      Serial.printf("[ZOE] Cabin Temp = %.1f°C\n", obdCabinTemp);
-    }
-    // AC Pressure: bytes 16 and 17 (bits 128 to 143)
-    int rawPress = parseUDSBits(resp2143, "6143", 128, 143);
-    if (rawPress >= 0) {
-      obdACPressure = rawPress * 0.1f;
-      Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
+      obdCabinTemp = (rawCabin * 0.1f) - 40.0f;
+      Serial.printf("[ZOE] Cabin Temp = %.1f C (raw=%d)\n", obdCabinTemp, rawCabin);
     }
   }
 
-  // 6. Query 2144 – AC RPM
+  // =================================================================
+  // 6. Query 2144 – AC Compressor RPM
+  //    IH_ClimCompRPMStatus: bits 107-116, resolution 10
+  // =================================================================
   String resp2144 = sendAndWaitResponse("2144", 4000);
   Serial.printf("[OBD] 2144 resp: '%s'\n", resp2144.c_str());
   if (resp2144.indexOf("6144") >= 0 || resp2144.indexOf("61 44") >= 0) {
-    int raw = parseUDSBits(resp2144, "6144", 104, 119);
+    int raw = parseUDSBits(resp2144, "6144", 107, 116);
     if (raw >= 0) {
       obdACRpm = raw * 10;
       Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
     }
   }
 
-  // 7. Query 2121 – External / Hot Source Temp
-  String resp2121 = sendAndWaitResponse("2121", 4000);
-  Serial.printf("[OBD] 2121 resp: '%s'\n", resp2121.c_str());
-  if (resp2121.indexOf("6121") >= 0 || resp2121.indexOf("61 21") >= 0) {
-    int rawHot = parseUDSBits(resp2121, "6121", 96, 111);
-    if (rawHot >= 0) {
-      float hotSourceTemp = rawHot / 100.0f;
-      Serial.printf("[ZOE] Hot Source Temp = %.2f°C\n", hotSourceTemp);
-    }
-  }
+  // NOTE: 2143 response is truncated (multi-frame, only first frame arrives).
+  // ExternalTemp (bits 110-117) and ACPressure (bits 134-142) are unreachable.
+  // Skipping for now.
 
-  // 8. Restore normal ELM327 timeout
-  sendATAndWait("ATST32");  // ~200ms timeout for normal EVC queries
+  // 7. Restore normal ELM327 timeout
+  sendATAndWait("ATST32");
 
-  // 9. Switch back to EVC
+  // 8. Switch back to EVC
   switchToECU("7E4", "7EC");
   obdCurrentECU = 0;
 
-  // 10. Update display with new data
+  // 9. Update display with new data
   lastOBDRxTime = millis();
   DisplayManager::updateHomeOBD();
 
