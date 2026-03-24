@@ -242,8 +242,8 @@ void ObdManager::processPolling() {
         case 2: sendCommand("ATFCSH7E4"); break; // FC fejléc
         case 3: sendCommand("222002"); break;    // SOC
         case 4: sendCommand("223206"); break;    // SOH
-        case 5: sendCommand("2233D8"); break;    // Bat Temp (JAVÍTVA: Nagy D!)
-        // --- HVAC (Climate) ECU lekérdezések ---
+        case 5: sendCommand("223204"); break;    // HV Bat Temp (CanZE alapértelmezett PID!)
+        // --- HVAC (Climate) ECU (Service 21) ---
         case 6: sendCommand("ATSH744"); break;
         case 7: sendCommand("ATCRA764"); break;
         case 8: sendCommand("ATFCSH744"); break; // FC fejléc a klímához!
@@ -281,9 +281,8 @@ void ObdManager::processPolling() {
         obdSOH = raw;
         Serial.printf("[ZOE] SOH = %d%%\n", obdSOH);
       }
-    } else if (resp.indexOf("6233D8") >= 0 || resp.indexOf("62 33 D8") >= 0) {
-      // JAVÍTVA: Nagy D8-at keres a feltétel!
-      int raw = parseUDSHex(resp, "6233D8", 1);
+    } else if (resp.indexOf("623204") >= 0 || resp.indexOf("62 32 04") >= 0) {
+      int raw = parseUDSHex(resp, "623204", 1);
       if (raw >= 0) {
         obdHVBatTemp = raw - 40;
         Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
