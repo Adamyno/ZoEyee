@@ -178,6 +178,28 @@ static bool sendATAndWait(const char *cmd, unsigned long timeoutMs = 800) {
 }
 
 // ============================================================
+// Blocking helper: send a DATA command and wait for any response.
+// Returns the response string, or "" on timeout.
+// Used for HVAC multi-frame queries that need longer waits.
+// ============================================================
+
+static String sendAndWaitResponse(const char *cmd, unsigned long timeoutMs = 3000) {
+  lastOBDValue = "";
+  ObdManager::sendCommand(cmd);
+  unsigned long t0 = millis();
+  while (millis() - t0 < timeoutMs) {
+    delay(30);
+    if (lastOBDValue.length() > 0) {
+      String resp = lastOBDValue;
+      lastOBDValue = "";
+      return resp;
+    }
+  }
+  Serial.printf("[OBD] Data cmd '%s' no response within %lu ms\n", cmd, timeoutMs);
+  return "";
+}
+
+// ============================================================
 // Switch the ELM327 context to a specific ECU (blocking).
 // This ensures ATSH + ATCRA + ATFCSH are all applied before
 // any data request is sent, preventing desync.
@@ -288,19 +310,83 @@ bool ObdManager::initOBD() {
 }
 
 // ============================================================
-// Two-phase polling: EVC queries → ECU switch → HVAC queries
-//
-// The key insight: AT commands (ATSH/ATCRA/ATFCSH) are sent
-// SYNCHRONOUSLY with blocking waits so they are GUARANTEED to
-// take effect before any data request is sent. Only the actual
-// data PID requests use the async response mechanism.
+// Blocking HVAC readout – runs as a single atomic operation.
+// Switches to HVAC ECU, queries cabin & external temp, then
+// switches back to EVC. No other command can interfere.
 // ============================================================
 
-// Data-only poll steps (no AT commands mixed in!)
-// Phase 0 (EVC):  0=SOC, 1=SOH, 2=BatTemp
-// Phase 1 (HVAC): 3=AC_RPM, 4=CabinTemp, 5=AC_Pressure
-// Phase 2 (any):  6=12V
-static const int POLL_STEPS = 7;
+void ObdManager::readHvacBlocking() {
+  Serial.println("[OBD] === HVAC blocking read START ===");
+
+  // 1. Switch to HVAC ECU
+  switchToECU("744", "764");
+  obdCurrentECU = 1;
+
+  // 2. Open diagnostic session on HVAC (flush response)
+  String sessResp = sendAndWaitResponse("1003", 1500);
+  Serial.printf("[OBD] HVAC session resp: '%s'\n", sessResp.c_str());
+
+  // 3. Query 2143 – Cabin Temp & AC Pressure (multi-frame, needs 3s)
+  String resp2143 = sendAndWaitResponse("2143", 3000);
+  Serial.printf("[OBD] 2143 resp: '%s'\n", resp2143.c_str());
+  if (resp2143.indexOf("6143") >= 0 || resp2143.indexOf("61 43") >= 0) {
+    // In-Car Temp: bytes 13 and 14 (bits 104 to 119)
+    int rawCabin = parseUDSBits(resp2143, "6143", 104, 119);
+    if (rawCabin >= 0) {
+      obdCabinTemp = rawCabin / 10.0f;
+      Serial.printf("[ZOE] Cabin Temp = %.1f°C\n", obdCabinTemp);
+    }
+    // AC Pressure: bytes 16 and 17 (bits 128 to 143)
+    int rawPress = parseUDSBits(resp2143, "6143", 128, 143);
+    if (rawPress >= 0) {
+      obdACPressure = rawPress * 0.1f;
+      Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
+    }
+  }
+
+  // 4. Query 2144 – AC RPM
+  String resp2144 = sendAndWaitResponse("2144", 3000);
+  Serial.printf("[OBD] 2144 resp: '%s'\n", resp2144.c_str());
+  if (resp2144.indexOf("6144") >= 0 || resp2144.indexOf("61 44") >= 0) {
+    int raw = parseUDSBits(resp2144, "6144", 104, 119);
+    if (raw >= 0) {
+      obdACRpm = raw * 10;
+      Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
+    }
+  }
+
+  // 5. Query 2121 – External / Hot Source Temp
+  String resp2121 = sendAndWaitResponse("2121", 3000);
+  Serial.printf("[OBD] 2121 resp: '%s'\n", resp2121.c_str());
+  if (resp2121.indexOf("6121") >= 0 || resp2121.indexOf("61 21") >= 0) {
+    int rawHot = parseUDSBits(resp2121, "6121", 96, 111);
+    if (rawHot >= 0) {
+      float hotSourceTemp = rawHot / 100.0f;
+      Serial.printf("[ZOE] Hot Source Temp = %.2f°C\n", hotSourceTemp);
+    }
+  }
+
+  // 6. Switch back to EVC
+  switchToECU("7E4", "7EC");
+  obdCurrentECU = 0;
+
+  // 7. Update display with new data
+  lastOBDRxTime = millis();
+  DisplayManager::updateHomeOBD();
+
+  Serial.println("[OBD] === HVAC blocking read DONE ===");
+}
+
+// ============================================================
+// Two-phase polling: EVC queries (async) → HVAC queries (blocking)
+//
+// EVC queries use the normal async mechanism.
+// HVAC queries are done in a BLOCKING fashion to prevent
+// command collisions on multi-frame ISO-TP responses.
+// ============================================================
+
+// Poll steps: 0=SOC, 1=SOH, 2=BatTemp, 3=HVAC(blocking), 4=12V
+static const int POLL_STEPS = 5;
 
 void ObdManager::processPolling() {
   if (manualMode) return; // SKIP automatic polling if user is debugging via Web Console
@@ -400,18 +486,6 @@ void ObdManager::processPolling() {
         switchToECU("7E4", "7EC");
         obdCurrentECU = 0;
       }
-      // Before HVAC queries: ensure we're pointed at HVAC
-      else if (obdPollIndex == 3 && obdCurrentECU != 1) {
-        Serial.println("[OBD] Switching to HVAC (744/764)...");
-        switchToECU("744", "764");
-        
-        // Wake up HVAC ECU and keep it awake for Cabin Temp query
-        sendCommand("1003");
-        delay(300); // Give it time to reply 7F 10 12 or similar
-        lastOBDValue = ""; // Flush the response so it doesn't break parsing
-        
-        obdCurrentECU = 1;
-      }
     }
 
     // --- Send the next data request ---
@@ -420,16 +494,17 @@ void ObdManager::processPolling() {
 
     if (obdZoeMode) {
       switch (obdPollIndex) {
-        // EVC (Service 22)
+        // EVC (Service 22) – async
         case 0: sendCommand("222002"); break;   // SOC
         case 1: sendCommand("223206"); break;   // SOH
         case 2: sendCommand("222001"); break;   // Battery Rack Temp
-        // HVAC (Service 21)
-        case 3: sendCommand("2144"); break;     // AC RPM
-        case 4: sendCommand("2121"); break;     // Cabin Temp
-        case 5: sendCommand("2143"); break;     // AC Pressure
+        // HVAC – fully blocking, no collision possible
+        case 3:
+          readHvacBlocking();
+          obdResponsePending = false; // Already processed
+          break;
         // General
-        case 6: sendCommand("ATRV"); break;     // 12V Battery
+        case 4: sendCommand("ATRV"); break;     // 12V Battery
       }
       obdPollIndex = (obdPollIndex + 1) % POLL_STEPS;
     } else {

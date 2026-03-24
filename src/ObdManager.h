@@ -10,4 +10,5 @@ public:
     static void sendManualCommand(const char *cmd);
     static bool initOBD();
     static void processPolling();
+    static void readHvacBlocking();
 };

@@ -35,7 +35,7 @@ bool obdHeartbeatLit = false;
 bool obdResponsePending = false;
 volatile bool bleDisconnectedFlag = false;
 const unsigned long OBD_NEXT_REQUEST_DELAY = 150;
-const unsigned long OBD_RESPONSE_TIMEOUT = 1500;
+const unsigned long OBD_RESPONSE_TIMEOUT = 2000;
 
 float obdSOC = -1;
 int obdSOH = -1;
