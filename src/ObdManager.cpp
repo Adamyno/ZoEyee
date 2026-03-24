@@ -1,5 +1,6 @@
 #include "ObdManager.h"
 #include "DisplayManager.h"
+#include "WebConsole.h"
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 
@@ -53,6 +54,8 @@ int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit, i
   uint64_t mask = (1ULL << bitsToExtract) - 1;
   return (int)(val & mask);
 }
+
+bool ObdManager::manualMode = false;
 
 // ============================================================
 // BLE Notify callback – assembles ELM327 responses
@@ -114,6 +117,8 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
         if (fullResponse.length() > 0)
           fullResponse += " ";
         fullResponse += lineUpper;
+        
+        WebConsole::pushLog(lineUpper); // Send raw line to Web Console
       }
 
       obdBufIndex = 0;
@@ -141,6 +146,10 @@ void ObdManager::sendCommand(const char *cmd) {
     pTxChar->writeValue((uint8_t *)fullCmd, strlen(fullCmd));
     Serial.printf("[OBD] Sent: %s\n", cmd);
   }
+}
+
+void ObdManager::sendManualCommand(const char *cmd) {
+  sendCommand(cmd);
 }
 
 // ============================================================
@@ -294,6 +303,8 @@ bool ObdManager::initOBD() {
 static const int POLL_STEPS = 7;
 
 void ObdManager::processPolling() {
+  if (manualMode) return; // SKIP automatic polling if user is debugging via Web Console
+  
   bool shouldSendNext = false;
   unsigned long now = millis();
 

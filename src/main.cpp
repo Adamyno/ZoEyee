@@ -18,6 +18,7 @@
 #include "WifiManager.h"
 #include "BluetoothManager.h"
 #include "ObdManager.h"
+#include "WebConsole.h"
 
 // UI and Touch logics moved to DisplayManager.cpp and TouchManager.cpp
 
@@ -75,10 +76,14 @@ void setup(void) {
   NimBLEDevice::init("ZoEyee-Scanner");
   NimBLEDevice::setOwnAddrType(
       BLE_OWN_ADDR_PUBLIC); // Fixált gyári MAC – Konnwei ne utasítsa el!
+  
+  WebConsole::begin(); // Start the OBD diagnostic web server
+  
   Serial.printf("[SYS] Setup Kész. Free heap: %d bytes\n", ESP.getFreeHeap());
 }
 
 void loop() {
+  WebConsole::handleClient(); // Process incoming Web Console HTTP requests
   TouchManager::processGestures();
 
   // Auto-scroll update for BT List
