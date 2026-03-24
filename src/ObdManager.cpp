@@ -395,6 +395,12 @@ void ObdManager::processPolling() {
       else if (obdPollIndex == 3 && obdCurrentECU != 1) {
         Serial.println("[OBD] Switching to HVAC (744/764)...");
         switchToECU("744", "764");
+        
+        // Wake up HVAC ECU and keep it awake for Cabin Temp query
+        sendCommand("1003");
+        delay(300); // Give it time to reply 7F 10 12 or similar
+        lastOBDValue = ""; // Flush the response so it doesn't break parsing
+        
         obdCurrentECU = 1;
       }
     }
