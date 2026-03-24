@@ -3,7 +3,9 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 
-// Külső UI frissítő hívás definiálása, hogy a parser elérje (ez később a DisplayManagerbe kerül)
+// ============================================================
+// UDS parsing helpers
+// ============================================================
 
 int parseUDSHex(const String &resp, const char *expectedPrefix, int byteCount) {
   String r = resp;
@@ -19,7 +21,6 @@ int parseUDSHex(const String &resp, const char *expectedPrefix, int byteCount) {
   return (int)strtol(hexPart.c_str(), NULL, 16);
 }
 
-// Új segédfüggvény specifikus bitek kiolvasásához (CanZE bit indexek pl. startBit=52, endBit=61)
 int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit, int endBit) {
   String r = resp;
   r.trim();
@@ -29,38 +30,35 @@ int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit, i
   int idx = r.indexOf(prefix);
   if (idx < 0)
     return -1;
-  
-  // A válasz hex stringje prefixszel együtt (a bit index a legelső bájttól indul a CanZE szerint)
+
   String fullHex = r.substring(idx);
-  
-  // startBit és endBit az üzenet elejétől számítva van (ahol byte 0 = 0..7 bit)
+
   int startByte = startBit / 8;
   int endByte = endBit / 8;
-  
+
   if (fullHex.length() < (unsigned int)(endByte + 1) * 2) {
-    return -1; // Nincs elég adat
+    return -1;
   }
-  
+
   uint64_t val = 0;
   for (int i = startByte; i <= endByte; i++) {
     String byteStr = fullHex.substring(i * 2, i * 2 + 2);
     val = (val << 8) | strtol(byteStr.c_str(), NULL, 16);
   }
-  
+
   int bitsToExtract = endBit - startBit + 1;
-  int shiftRight = (8 - ((endBit + 1) % 8)) % 8; // Hátralévő bitek a byte végéig
-  
+  int shiftRight = (8 - ((endBit + 1) % 8)) % 8;
+
   val = val >> shiftRight;
   uint64_t mask = (1ULL << bitsToExtract) - 1;
   return (int)(val & mask);
 }
 
-void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, bool isNotify) {
-  Serial.print("[OBD] RX RAW: ");
-  for (size_t i = 0; i < length; i++)
-    Serial.printf("%02X ", pData[i]);
-  Serial.println();
+// ============================================================
+// BLE Notify callback – assembles ELM327 responses
+// ============================================================
 
+void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, bool isNotify) {
   for (size_t i = 0; i < length; i++) {
     char c = (char)pData[i];
     if (c == '>') {
@@ -94,14 +92,17 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
         String lineUpper = line;
         lineUpper.toUpperCase();
 
+        // Skip echoed AT commands
         if (lineUpper.startsWith("AT") && lineUpper.indexOf(' ') < 0 &&
             lineUpper.length() <= 6)
           continue;
 
+        // Skip very short noise
         if (lineUpper.length() <= 3 && lineUpper.indexOf(' ') < 0) {
           continue;
         }
 
+        // Strip ISO-TP sequence counters (e.g. "0:" "1:" "21:")
         if (lineUpper.length() >= 2 && lineUpper.charAt(1) == ':') {
           lineUpper = lineUpper.substring(2);
           lineUpper.trim();
@@ -121,13 +122,17 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
         continue;
 
       lastOBDValue = fullResponse;
-      Serial.printf("[OBD] Response complete: '%s'\n", lastOBDValue.c_str());
+      Serial.printf("[OBD] Response: '%s'\n", lastOBDValue.c_str());
     } else if (c != '\n') {
       if (obdBufIndex < (int)sizeof(obdBuffer) - 1)
         obdBuffer[obdBufIndex++] = c;
     }
   }
 }
+
+// ============================================================
+// Send a command string to the ELM327 via BLE
+// ============================================================
 
 void ObdManager::sendCommand(const char *cmd) {
   if (pTxChar != nullptr && isBluetoothConnected) {
@@ -137,6 +142,56 @@ void ObdManager::sendCommand(const char *cmd) {
     Serial.printf("[OBD] Sent: %s\n", cmd);
   }
 }
+
+// ============================================================
+// Blocking helper: send an AT command and wait for "OK"
+// Returns true if "OK" was received within timeout.
+// ============================================================
+
+static bool sendATAndWait(const char *cmd, unsigned long timeoutMs = 800) {
+  lastOBDValue = "";
+  ObdManager::sendCommand(cmd);
+  unsigned long t0 = millis();
+  while (millis() - t0 < timeoutMs) {
+    delay(30);
+    if (lastOBDValue.length() > 0) {
+      String r = lastOBDValue;
+      r.toUpperCase();
+      lastOBDValue = "";
+      if (r.indexOf("OK") >= 0) {
+        return true;
+      }
+      // If it's not "OK", might be leftover data – keep waiting
+    }
+  }
+  Serial.printf("[OBD] AT cmd '%s' no OK within %lu ms\n", cmd, timeoutMs);
+  return false;
+}
+
+// ============================================================
+// Switch the ELM327 context to a specific ECU (blocking).
+// This ensures ATSH + ATCRA + ATFCSH are all applied before
+// any data request is sent, preventing desync.
+// ============================================================
+
+static bool switchToECU(const char *txId, const char *rxId) {
+  char cmd[16];
+
+  snprintf(cmd, sizeof(cmd), "ATSH%s", txId);
+  if (!sendATAndWait(cmd)) return false;
+
+  snprintf(cmd, sizeof(cmd), "ATCRA%s", rxId);
+  if (!sendATAndWait(cmd)) return false;
+
+  snprintf(cmd, sizeof(cmd), "ATFCSH%s", txId);
+  if (!sendATAndWait(cmd)) return false;
+
+  return true;
+}
+
+// ============================================================
+// OBD Initialization
+// ============================================================
 
 bool ObdManager::initOBD() {
   bool isELM = false;
@@ -177,8 +232,9 @@ bool ObdManager::initOBD() {
   }
 
   Serial.printf("[BLE] ELM327 hitelesítve: %s\n", lastOBDValue.c_str());
-  sendCommand("ATE0");
-  delay(500);
+
+  // Echo off
+  sendATAndWait("ATE0");
 
   Serial.println("[OBD] ZOE CAN protokoll beállítás...");
   gfx->fillRect(30, 50, 260, 40, BLACK);
@@ -188,20 +244,21 @@ bool ObdManager::initOBD() {
   gfx->setCursor(50, 75);
   gfx->print("Setting up CAN...");
 
-  sendCommand("ATSP6"); delay(500); lastOBDValue = "";
-  
-  // ========================================================
-  // FLOW CONTROL ALAPBEÁLLÍTÁSOK A MULTI-FRAME ÜZENETEKHEZ
-  // ========================================================
-  sendCommand("ATFCSD300000"); delay(300); lastOBDValue = ""; // FC Data
-  sendCommand("ATFCSM1"); delay(300); lastOBDValue = "";      // FC Mode 1
-  
-  // Alapértelmezett ECU (EVC) megcélzása
-  sendCommand("ATSH7E4"); delay(300); lastOBDValue = "";
-  sendCommand("ATCRA7EC"); delay(300); lastOBDValue = "";
-  sendCommand("ATFCSH7E4"); delay(300); lastOBDValue = "";    // FC Header az EVC-hez
-  
-  sendCommand("10C0"); delay(500); lastOBDValue = "";
+  // CAN protocol 6 (ISO 15765-4, 11-bit, 500 kbaud)
+  sendATAndWait("ATSP6");
+
+  // Flow Control settings for multi-frame responses
+  sendATAndWait("ATFCSD300000");
+  sendATAndWait("ATFCSM1");
+
+  // Default to EVC (Battery Management)
+  switchToECU("7E4", "7EC");
+
+  // Open extended diagnostic session
+  lastOBDValue = "";
+  sendCommand("10C0");
+  delay(500);
+  lastOBDValue = "";
 
   obdZoeMode = true;
   obdPollIndex = 0;
@@ -212,13 +269,34 @@ bool ObdManager::initOBD() {
   obdResponsePending = false;
   lastOBDSentTime = 0;
   lastOBDPollTime = 0;
+
+  // Track which ECU the ELM327 is currently pointed at
+  // 0 = EVC (7E4/7EC), 1 = HVAC (744/764)
+  obdCurrentECU = 0;
+
   Serial.println("[BLE] OBD adapter felállt, ZOE mód aktív!");
   return true;
 }
 
+// ============================================================
+// Two-phase polling: EVC queries → ECU switch → HVAC queries
+//
+// The key insight: AT commands (ATSH/ATCRA/ATFCSH) are sent
+// SYNCHRONOUSLY with blocking waits so they are GUARANTEED to
+// take effect before any data request is sent. Only the actual
+// data PID requests use the async response mechanism.
+// ============================================================
+
+// Data-only poll steps (no AT commands mixed in!)
+// Phase 0 (EVC):  0=SOC, 1=SOH, 2=BatTemp
+// Phase 1 (HVAC): 3=AC_RPM, 4=AC_Pressure
+// Phase 2 (any):  5=12V
+static const int POLL_STEPS = 6;
+
 void ObdManager::processPolling() {
   bool shouldSendNext = false;
   unsigned long now = millis();
+
   if (!obdResponsePending) {
     shouldSendNext = true;
   } else if (lastOBDValue.length() > 0) {
@@ -226,90 +304,103 @@ void ObdManager::processPolling() {
       shouldSendNext = true;
     }
   } else if (now - lastOBDSentTime >= OBD_RESPONSE_TIMEOUT) {
-    Serial.printf("[OBD] Timeout a %lu ms-os kérésnél, következő PID...\n", OBD_RESPONSE_TIMEOUT);
+    Serial.printf("[OBD] Timeout step %d, skipping...\n", obdPollIndex);
     shouldSendNext = true;
   }
 
   if (shouldSendNext) {
-    lastOBDSentTime = now;
-    obdResponsePending = true;
-    if (obdZoeMode) {
-      // 12 lépéses állapotgép a megfelelő Flow Control kezelés miatt
-      switch(obdPollIndex) {
-        // --- EVC (Battery) ECU lekérdezések ---
-        case 0: sendCommand("ATSH7E4"); break;
-        case 1: sendCommand("ATCRA7EC"); break;
-        case 2: sendCommand("ATFCSH7E4"); break; // FC fejléc
-        case 3: sendCommand("222002"); break;    // SOC
-        case 4: sendCommand("223206"); break;    // SOH
-        case 5: sendCommand("223204"); break;    // HV Bat Temp (CanZE alapértelmezett PID!)
-        // --- HVAC (Climate) ECU (Service 21) ---
-        case 6: sendCommand("ATSH744"); break;
-        case 7: sendCommand("ATCRA764"); break;
-        case 8: sendCommand("ATFCSH744"); break; // FC fejléc a klímához!
-        case 9: sendCommand("2144"); break;      // AC RPM (Service 21)
-        case 10: sendCommand("2143"); break;     // AC Pressure (Service 21)
-        // --- Általános ---
-        case 11: sendCommand("ATRV"); break;     // 12V Battery
+    // --- Process any pending response FIRST ---
+    if (lastOBDValue.length() > 0) {
+      lastOBDRxTime = millis();
+      gfx->fillCircle(234, 10, 3, GREEN);
+      obdHeartbeatLit = true;
+      lastOBDPollTime = millis();
+
+      String resp = lastOBDValue;
+      lastOBDValue = "";
+      Serial.printf("[ZOE] Parse: '%s'\n", resp.c_str());
+
+      // === EVC responses (Service 22 → positive response 62) ===
+      if (resp.indexOf("622002") >= 0 || resp.indexOf("62 20 02") >= 0) {
+        int raw = parseUDSHex(resp, "622002", 2);
+        if (raw >= 0) {
+          obdSOC = raw * 0.02;
+          Serial.printf("[ZOE] SOC = %.1f%%\n", obdSOC);
+        }
+      } else if (resp.indexOf("623206") >= 0 || resp.indexOf("62 32 06") >= 0) {
+        int raw = parseUDSHex(resp, "623206", 1);
+        if (raw >= 0) {
+          obdSOH = raw;
+          Serial.printf("[ZOE] SOH = %d%%\n", obdSOH);
+        }
+      } else if (resp.indexOf("623204") >= 0 || resp.indexOf("62 32 04") >= 0) {
+        int raw = parseUDSHex(resp, "623204", 1);
+        if (raw >= 0) {
+          obdHVBatTemp = raw - 40;
+          Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
+        }
       }
-      obdPollIndex = (obdPollIndex + 1) % 12;
+      // === HVAC responses (Service 21 → positive response 61) ===
+      else if (resp.indexOf("6144") >= 0 || resp.indexOf("61 44") >= 0) {
+        int raw = parseUDSBits(resp, "6144", 107, 116);
+        if (raw >= 0) {
+          obdACRpm = raw * 10;
+          Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
+        }
+      } else if (resp.indexOf("6143") >= 0 || resp.indexOf("61 43") >= 0) {
+        int raw = parseUDSBits(resp, "6143", 134, 142);
+        if (raw >= 0) {
+          obdACPressure = raw * 0.1f;
+          Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
+        }
+      }
+      // === General ===
+      else if (resp.endsWith("V")) {
+        obd12V = resp;
+        Serial.printf("[ZOE] 12V = %s\n", obd12V.c_str());
+      } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0 || resp.indexOf("7F") >= 0) {
+        Serial.printf("[ZOE] ECU error/no data: %s\n", resp.c_str());
+      }
+      // "OK" from AT commands silently ignored
+
+      DisplayManager::updateHomeOBD();
+    }
+
+    // --- ECU context switching (blocking, guaranteed) ---
+    if (obdZoeMode) {
+      // Before EVC queries: ensure we're pointed at EVC
+      if (obdPollIndex == 0 && obdCurrentECU != 0) {
+        Serial.println("[OBD] Switching to EVC (7E4/7EC)...");
+        switchToECU("7E4", "7EC");
+        obdCurrentECU = 0;
+      }
+      // Before HVAC queries: ensure we're pointed at HVAC
+      else if (obdPollIndex == 3 && obdCurrentECU != 1) {
+        Serial.println("[OBD] Switching to HVAC (744/764)...");
+        switchToECU("744", "764");
+        obdCurrentECU = 1;
+      }
+    }
+
+    // --- Send the next data request ---
+    lastOBDSentTime = millis();
+    obdResponsePending = true;
+
+    if (obdZoeMode) {
+      switch (obdPollIndex) {
+        // EVC (Service 22)
+        case 0: sendCommand("222002"); break;   // SOC
+        case 1: sendCommand("223206"); break;   // SOH
+        case 2: sendCommand("223204"); break;   // HV Bat Temp
+        // HVAC (Service 21)
+        case 3: sendCommand("2144"); break;     // AC RPM
+        case 4: sendCommand("2143"); break;     // AC Pressure
+        // General
+        case 5: sendCommand("ATRV"); break;     // 12V Battery
+      }
+      obdPollIndex = (obdPollIndex + 1) % POLL_STEPS;
     } else {
       sendCommand("ATRV");
     }
-  }
-
-  if (lastOBDValue.length() > 0) {
-    lastOBDRxTime = millis();
-    gfx->fillCircle(234, 10, 3, GREEN);
-    obdHeartbeatLit = true;
-
-    lastOBDPollTime = millis();
-    obdResponsePending = false;
-
-    String resp = lastOBDValue;
-    Serial.printf("[ZOE] Feldolgozás: '%s'\n", resp.c_str());
-
-    if (resp.indexOf("622002") >= 0 || resp.indexOf("62 20 02") >= 0) {
-      int raw = parseUDSHex(resp, "622002", 2);
-      if (raw >= 0) {
-        obdSOC = raw * 0.02;
-        Serial.printf("[ZOE] SOC = %.1f%%\n", obdSOC);
-      }
-    } else if (resp.indexOf("623206") >= 0 || resp.indexOf("62 32 06") >= 0) {
-      int raw = parseUDSHex(resp, "623206", 1);
-      if (raw >= 0) {
-        obdSOH = raw;
-        Serial.printf("[ZOE] SOH = %d%%\n", obdSOH);
-      }
-    } else if (resp.indexOf("623204") >= 0 || resp.indexOf("62 32 04") >= 0) {
-      int raw = parseUDSHex(resp, "623204", 1);
-      if (raw >= 0) {
-        obdHVBatTemp = raw - 40;
-        Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
-      }
-    } else if (resp.indexOf("6144") >= 0 || resp.indexOf("61 44") >= 0) {
-      // AC RPM is bits 107 to 116 (Status) (val * 10)
-      int raw = parseUDSBits(resp, "6144", 107, 116);
-      if (raw >= 0) {
-        obdACRpm = raw * 10;
-        Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
-      }
-    } else if (resp.indexOf("6143") >= 0 || resp.indexOf("61 43") >= 0) {
-      // AC Pressure is bits 134 to 142 (val * 0.1)
-      int raw = parseUDSBits(resp, "6143", 134, 142);
-      if (raw >= 0) {
-        obdACPressure = raw * 0.1f;
-        Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
-      }
-    } else if (resp.endsWith("V")) {
-      obd12V = resp;
-      Serial.printf("[ZOE] 12V = %s\n", obd12V.c_str());
-    } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0) {
-      Serial.printf("[ZOE] ECU nem válaszolt: %s\n", resp.c_str());
-    } else if (resp == "OK") {
-      // Ignoráljuk az AT parancsok nyugtázását
-    }
-    lastOBDValue = "";
-    DisplayManager::updateHomeOBD();
   }
 }

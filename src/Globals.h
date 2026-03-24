@@ -70,6 +70,7 @@ extern float obdACPressure;
 extern String obd12V;
 extern int obdPollIndex;
 extern bool obdZoeMode;
+extern int obdCurrentECU;  // 0=EVC, 1=HVAC
 
 // Cached BLE Devices
 struct CachedDevice {

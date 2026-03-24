@@ -46,6 +46,7 @@ float obdACPressure = -1;
 String obd12V = "";
 int obdPollIndex = 0;
 bool obdZoeMode = false;
+int obdCurrentECU = 0;  // 0=EVC, 1=HVAC
 
 CachedDevice btDevices[MAX_BLE_DEVICES];
 int btTotalDevices = 0;
