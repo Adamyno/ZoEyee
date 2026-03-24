@@ -318,16 +318,23 @@ bool ObdManager::initOBD() {
 void ObdManager::readHvacBlocking() {
   Serial.println("[OBD] === HVAC blocking read START ===");
 
-  // 1. Switch to HVAC ECU
+  // 1. Switch to HVAC ECU (ATSH, ATCRA, ATFCSH)
   switchToECU("744", "764");
   obdCurrentECU = 1;
 
-  // 2. Open diagnostic session on HVAC (flush response)
-  String sessResp = sendAndWaitResponse("1003", 1500);
+  // 2. Re-apply Flow Control settings for multi-frame responses
+  sendATAndWait("ATFCSD300000");  // FC: ContinueToSend, BS=0, STmin=0
+  sendATAndWait("ATFCSM1");       // User-defined FC mode
+
+  // 3. Set ELM327 timeout to max for multi-frame HVAC responses
+  sendATAndWait("ATSTFF");  // Max timeout (~1s per frame wait)
+
+  // 4. Open vendor diagnostic session on HVAC (Renault uses C0, not 03!)
+  String sessResp = sendAndWaitResponse("10C0", 2000);
   Serial.printf("[OBD] HVAC session resp: '%s'\n", sessResp.c_str());
 
-  // 3. Query 2143 – Cabin Temp & AC Pressure (multi-frame, needs 3s)
-  String resp2143 = sendAndWaitResponse("2143", 3000);
+  // 5. Query 2143 – Cabin Temp & AC Pressure (multi-frame, needs 3s)
+  String resp2143 = sendAndWaitResponse("2143", 4000);
   Serial.printf("[OBD] 2143 resp: '%s'\n", resp2143.c_str());
   if (resp2143.indexOf("6143") >= 0 || resp2143.indexOf("61 43") >= 0) {
     // In-Car Temp: bytes 13 and 14 (bits 104 to 119)
@@ -344,8 +351,8 @@ void ObdManager::readHvacBlocking() {
     }
   }
 
-  // 4. Query 2144 – AC RPM
-  String resp2144 = sendAndWaitResponse("2144", 3000);
+  // 6. Query 2144 – AC RPM
+  String resp2144 = sendAndWaitResponse("2144", 4000);
   Serial.printf("[OBD] 2144 resp: '%s'\n", resp2144.c_str());
   if (resp2144.indexOf("6144") >= 0 || resp2144.indexOf("61 44") >= 0) {
     int raw = parseUDSBits(resp2144, "6144", 104, 119);
@@ -355,8 +362,8 @@ void ObdManager::readHvacBlocking() {
     }
   }
 
-  // 5. Query 2121 – External / Hot Source Temp
-  String resp2121 = sendAndWaitResponse("2121", 3000);
+  // 7. Query 2121 – External / Hot Source Temp
+  String resp2121 = sendAndWaitResponse("2121", 4000);
   Serial.printf("[OBD] 2121 resp: '%s'\n", resp2121.c_str());
   if (resp2121.indexOf("6121") >= 0 || resp2121.indexOf("61 21") >= 0) {
     int rawHot = parseUDSBits(resp2121, "6121", 96, 111);
@@ -366,11 +373,14 @@ void ObdManager::readHvacBlocking() {
     }
   }
 
-  // 6. Switch back to EVC
+  // 8. Restore normal ELM327 timeout
+  sendATAndWait("ATST32");  // ~200ms timeout for normal EVC queries
+
+  // 9. Switch back to EVC
   switchToECU("7E4", "7EC");
   obdCurrentECU = 0;
 
-  // 7. Update display with new data
+  // 10. Update display with new data
   lastOBDRxTime = millis();
   DisplayManager::updateHomeOBD();
 
