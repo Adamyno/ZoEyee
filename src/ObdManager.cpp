@@ -247,8 +247,8 @@ void ObdManager::processPolling() {
         case 6: sendCommand("ATSH744"); break;
         case 7: sendCommand("ATCRA764"); break;
         case 8: sendCommand("ATFCSH744"); break; // FC fejléc a klímához!
-        case 9: sendCommand("222144"); break;    // AC RPM
-        case 10: sendCommand("222143"); break;   // AC Pressure
+        case 9: sendCommand("2144"); break;      // AC RPM (Service 21)
+        case 10: sendCommand("2143"); break;     // AC Pressure (Service 21)
         // --- Általános ---
         case 11: sendCommand("ATRV"); break;     // 12V Battery
       }
@@ -288,16 +288,16 @@ void ObdManager::processPolling() {
         obdHVBatTemp = raw - 40;
         Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
       }
-    } else if (resp.indexOf("622144") >= 0 || resp.indexOf("62 21 44") >= 0) {
+    } else if (resp.indexOf("6144") >= 0 || resp.indexOf("61 44") >= 0) {
       // AC RPM is bits 107 to 116 (Status) (val * 10)
-      int raw = parseUDSBits(resp, "622144", 107, 116);
+      int raw = parseUDSBits(resp, "6144", 107, 116);
       if (raw >= 0) {
         obdACRpm = raw * 10;
         Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
       }
-    } else if (resp.indexOf("622143") >= 0 || resp.indexOf("62 21 43") >= 0) {
+    } else if (resp.indexOf("6143") >= 0 || resp.indexOf("61 43") >= 0) {
       // AC Pressure is bits 134 to 142 (val * 0.1)
-      int raw = parseUDSBits(resp, "622143", 134, 142);
+      int raw = parseUDSBits(resp, "6143", 134, 142);
       if (raw >= 0) {
         obdACPressure = raw * 0.1f;
         Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
