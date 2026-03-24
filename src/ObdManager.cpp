@@ -289,9 +289,9 @@ bool ObdManager::initOBD() {
 
 // Data-only poll steps (no AT commands mixed in!)
 // Phase 0 (EVC):  0=SOC, 1=SOH, 2=BatTemp
-// Phase 1 (HVAC): 3=AC_RPM, 4=AC_Pressure
-// Phase 2 (any):  5=12V
-static const int POLL_STEPS = 6;
+// Phase 1 (HVAC): 3=AC_RPM, 4=CabinTemp, 5=AC_Pressure
+// Phase 2 (any):  6=12V
+static const int POLL_STEPS = 7;
 
 void ObdManager::processPolling() {
   bool shouldSendNext = false;
@@ -353,6 +353,12 @@ void ObdManager::processPolling() {
           obdACPressure = raw * 0.1f;
           Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
         }
+      } else if (resp.indexOf("6121") >= 0 || resp.indexOf("61 21") >= 0) {
+        int raw = parseUDSBits(resp, "6121", 26, 35);
+        if (raw >= 0) {
+          obdCabinTemp = raw * 0.1f - 40.0f;
+          Serial.printf("[ZOE] Cabin Temp = %.1f°C\n", obdCabinTemp);
+        }
       }
       // === General ===
       else if (resp.endsWith("V")) {
@@ -394,9 +400,10 @@ void ObdManager::processPolling() {
         case 2: sendCommand("222001"); break;   // Battery Rack Temp
         // HVAC (Service 21)
         case 3: sendCommand("2144"); break;     // AC RPM
-        case 4: sendCommand("2143"); break;     // AC Pressure
+        case 4: sendCommand("2121"); break;     // Cabin Temp
+        case 5: sendCommand("2143"); break;     // AC Pressure
         // General
-        case 5: sendCommand("ATRV"); break;     // 12V Battery
+        case 6: sendCommand("ATRV"); break;     // 12V Battery
       }
       obdPollIndex = (obdPollIndex + 1) % POLL_STEPS;
     } else {

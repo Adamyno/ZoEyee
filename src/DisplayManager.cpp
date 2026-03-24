@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
+#include <Fonts/FreeSans24pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include "Icons.h"
 
@@ -262,8 +263,8 @@ void DisplayManager::showHome() {
   CellData cells[6] = {
     {0, (float)obdSOH,   -1,  "%",  true },  // SOH
     {1, obdSOC,          -1,  "%",  false},  // SOC
-    {2, obdCabinTemp,    -99, "\xB0",  false},  // Cabin
-    {3, obdHVBatTemp,    -99, "\xB0",  false},  // Battery
+    {2, obdCabinTemp,    -99, "\xB0" "C",  false},  // Cabin
+    {3, obdHVBatTemp,    -99, "\xB0" "C",  false},  // Battery
     {4, obdACRpm,       -1,  "",    true },  // AC RPM
     {5, obdACPressure,   -1,  "",    false},  // AC Pressure
   };
@@ -325,28 +326,47 @@ void DisplayManager::showHome() {
     }
 
     // --- Draw value ---
-    gfx->setFont(&FreeSans18pt7b);
+    gfx->setFont(&FreeSans24pt7b);
     gfx->setTextColor(WHITE);
     gfx->setTextSize(1);
 
     int textX = x0 + 48;
-    int textY = y0 + cellH / 2 + 14;
+    int textY = y0 + cellH / 2 + 18;
     bool hasData = (cells[i].value > cells[i].noDataSentinel);
 
     if (hasData) {
       char buf[16];
       if (cells[i].isInt) {
-        snprintf(buf, sizeof(buf), "%d%s", (int)cells[i].value, cells[i].unit);
+        snprintf(buf, sizeof(buf), "%d", (int)cells[i].value);
       } else {
-        // For AC pressure show 1 decimal
         if (cells[i].iconType == 5) {
           snprintf(buf, sizeof(buf), "%.1f", cells[i].value);
         } else {
-          snprintf(buf, sizeof(buf), "%.0f%s", cells[i].value, cells[i].unit);
+          snprintf(buf, sizeof(buf), "%.0f", cells[i].value);
         }
       }
       gfx->setCursor(textX, textY);
       gfx->print(buf);
+
+      // Draw unit in smaller font after value
+      int16_t x1, y1;
+      uint16_t w, h;
+      gfx->getTextBounds(buf, textX, textY, &x1, &y1, &w, &h);
+      int unitX = textX + w + 2;
+      gfx->setFont(&FreeSans9pt7b);
+      gfx->setTextColor(0xBDF7); // light grey
+      if (cells[i].iconType == 4) {
+        // AC RPM
+        gfx->setCursor(unitX, textY);
+        gfx->print("RPM");
+      } else if (cells[i].iconType == 5) {
+        // AC Pressure
+        gfx->setCursor(unitX, textY);
+        gfx->print("Bar");
+      } else if (strlen(cells[i].unit) > 0) {
+        gfx->setCursor(unitX, textY);
+        gfx->print(cells[i].unit);
+      }
     } else {
       gfx->setCursor(textX, textY);
       gfx->print("--");
