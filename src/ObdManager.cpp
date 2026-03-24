@@ -333,8 +333,8 @@ void ObdManager::processPolling() {
           obdSOH = raw;
           Serial.printf("[ZOE] SOH = %d%%\n", obdSOH);
         }
-      } else if (resp.indexOf("623204") >= 0 || resp.indexOf("62 32 04") >= 0) {
-        int raw = parseUDSHex(resp, "623204", 1);
+      } else if (resp.indexOf("622001") >= 0 || resp.indexOf("62 20 01") >= 0) {
+        int raw = parseUDSHex(resp, "622001", 1);
         if (raw >= 0) {
           obdHVBatTemp = raw - 40;
           Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
@@ -391,7 +391,7 @@ void ObdManager::processPolling() {
         // EVC (Service 22)
         case 0: sendCommand("222002"); break;   // SOC
         case 1: sendCommand("223206"); break;   // SOH
-        case 2: sendCommand("223204"); break;   // HV Bat Temp
+        case 2: sendCommand("222001"); break;   // Battery Rack Temp
         // HVAC (Service 21)
         case 3: sendCommand("2144"); break;     // AC RPM
         case 4: sendCommand("2143"); break;     // AC Pressure
