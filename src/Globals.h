@@ -19,7 +19,8 @@ enum State {
   STATE_BT_SCAN,
   STATE_BRIGHTNESS,
   STATE_BT_LIST,
-  STATE_BT_DEVICE_INFO
+  STATE_BT_DEVICE_INFO,
+  STATE_BT_STATUS
 };
 
 extern State currentState;
@@ -68,6 +69,10 @@ extern float obdCabinTemp;
 extern float obdACRpm;
 extern float obdACPressure;
 extern String obd12V;
+
+extern String btTargetMAC;
+extern String btTargetName;
+extern uint8_t btTargetType;
 extern int obdPollIndex;
 extern bool obdZoeMode;
 extern int obdCurrentECU;  // 0=EVC, 1=HVAC

@@ -353,22 +353,31 @@ void ObdManager::processPolling() {
       }
       // === HVAC responses (Service 21 → positive response 61) ===
       else if (resp.indexOf("6144") >= 0 || resp.indexOf("61 44") >= 0) {
-        int raw = parseUDSBits(resp, "6144", 107, 116);
+        // AC RPM in 2144: bytes 13 and 14 (bits 104 to 119)
+        int raw = parseUDSBits(resp, "6144", 104, 119);
         if (raw >= 0) {
           obdACRpm = raw * 10;
           Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
         }
       } else if (resp.indexOf("6143") >= 0 || resp.indexOf("61 43") >= 0) {
-        int raw = parseUDSBits(resp, "6143", 134, 142);
-        if (raw >= 0) {
-          obdACPressure = raw * 0.1f;
+        // In-Car Temp: bytes 13 and 14 (bits 104 to 119)
+        int rawCabin = parseUDSBits(resp, "6143", 104, 119);
+        if (rawCabin >= 0) {
+          obdCabinTemp = rawCabin / 10.0f;
+          Serial.printf("[ZOE] Cabin Temp = %.1f°C\n", obdCabinTemp);
+        }
+        // AC Pressure: bytes 16 and 17 (bits 128 to 143)
+        int rawPress = parseUDSBits(resp, "6143", 128, 143);
+        if (rawPress >= 0) {
+          obdACPressure = rawPress * 0.1f;
           Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
         }
       } else if (resp.indexOf("6121") >= 0 || resp.indexOf("61 21") >= 0) {
-        int raw = parseUDSBits(resp, "6121", 26, 35);
-        if (raw >= 0) {
-          obdCabinTemp = raw * 0.1f - 40.0f;
-          Serial.printf("[ZOE] Cabin Temp = %.1f°C\n", obdCabinTemp);
+        // Hot Source Temp: bytes 12 and 13 (bits 96 to 111)
+        int rawHot = parseUDSBits(resp, "6121", 96, 111);
+        if (rawHot >= 0) {
+          float hotSourceTemp = rawHot / 100.0f;
+          Serial.printf("[ZOE] Hot Source Temp = %.2f°C\n", hotSourceTemp);
         }
       }
       // === General ===

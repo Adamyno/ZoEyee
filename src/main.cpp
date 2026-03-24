@@ -42,6 +42,9 @@ void setup(void) {
   wifiAutoSave = preferences.getBool("auto", false);
   wifiTargetSSID = preferences.getString("ssid", "");
   wifiPassword = preferences.getString("pw", "");
+  btTargetMAC = preferences.getString("bt_mac", "");
+  btTargetName = preferences.getString("bt_name", "");
+  btTargetType = preferences.getUChar("bt_type", 0);
   
   WiFi.mode(WIFI_STA); // Initialize LwIP networking stack unconditionally to avoid WebServer crash
   
@@ -177,6 +180,29 @@ void loop() {
   if (currentState == STATE_HOME && isBluetoothConnected) {
     ObdManager::processPolling();
   }
+
+  // --- Auto-Reconnect Logic ---
+  static unsigned long lastWifiReconnectTime = 0;
+  if (wifiAutoSave && wifiTargetSSID.length() > 0 && WiFi.status() != WL_CONNECTED) {
+    if (millis() - lastWifiReconnectTime > 10000) {
+        lastWifiReconnectTime = millis();
+        // UI feedback handled implicitly by drawTopBar red circle
+        WiFi.disconnect();
+        if (wifiPassword.length() > 0) WiFi.begin(wifiTargetSSID.c_str(), wifiPassword.c_str());
+        else WiFi.begin(wifiTargetSSID.c_str());
+    }
+  }
+
+  static unsigned long lastBtReconnectTime = 0;
+  if (currentState == STATE_HOME && !isBluetoothConnected && !bleConnecting && btTargetMAC.length() > 0) {
+    if (millis() - lastBtReconnectTime > 20000) {
+        lastBtReconnectTime = millis();
+        // Force top bar update to RED before blocking connect function
+        DisplayManager::drawTopBar(true); 
+        BluetoothManager::connectByMAC(btTargetMAC);
+    }
+  }
+  // ----------------------------
 
   // Heartbeat villogás takarítása
   if (obdHeartbeatLit && millis() - lastOBDRxTime > 150) {

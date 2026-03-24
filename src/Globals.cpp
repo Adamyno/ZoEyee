@@ -44,6 +44,10 @@ float obdCabinTemp = -99;
 float obdACRpm = -1;
 float obdACPressure = -1;
 String obd12V = "";
+
+String btTargetMAC = "";
+String btTargetName = "";
+uint8_t btTargetType = 0;
 int obdPollIndex = 0;
 bool obdZoeMode = false;
 int obdCurrentECU = 0;  // 0=EVC, 1=HVAC

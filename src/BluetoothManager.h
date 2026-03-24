@@ -7,6 +7,8 @@ public:
     static void runBLEScan();
     static void showList(bool fullRedraw = true);
     static void showDeviceInfo();
+    static void showStatus();
     static bool connect(int deviceIndex);
+    static bool connectByMAC(String mac);
     static void disconnect();
 };

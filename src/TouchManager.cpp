@@ -168,8 +168,13 @@ void TouchManager::processGestures() {
                 currentState = STATE_WIFI_MENU;
                 WifiManager::showMenu();
               } else if (menuIndex == 2) {
-                currentState = STATE_BT_SCAN;
-                BluetoothManager::runBLEScan();
+                if (isBluetoothConnected) {
+                  currentState = STATE_BT_STATUS;
+                  BluetoothManager::showStatus();
+                } else {
+                  currentState = STATE_BT_SCAN;
+                  BluetoothManager::runBLEScan();
+                }
               } else if (menuIndex == 3) {
                 currentState = STATE_BRIGHTNESS;
                 DisplayManager::showBrightness();
@@ -189,6 +194,17 @@ void TouchManager::processGestures() {
                 currentState = STATE_BT_DEVICE_INFO;
                 BluetoothManager::showDeviceInfo();
               }
+            }
+          } else if (currentState == STATE_BT_STATUS) {
+            if (startY >= 146 && startY <= 174) {
+              preferences.remove("bt_mac");
+              preferences.remove("bt_name");
+              preferences.remove("bt_type");
+              btTargetMAC = "";
+              btTargetName = "";
+              BluetoothManager::disconnect();
+              currentState = STATE_MENU;
+              DisplayManager::drawMenu();
             }
           } else if (currentState == STATE_WIFI_MENU) {
             // AP Mode button

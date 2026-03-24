@@ -124,6 +124,44 @@ void BluetoothManager::showDeviceInfo() {
   }
 }
 
+void BluetoothManager::showStatus() {
+  gfx->fillScreen(BLACK);
+  DisplayManager::drawTopBar();
+  gfx->setFont(&FreeSans12pt7b);
+  gfx->setTextColor(YELLOW, BLACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(85, 35);
+  gfx->println("BT STATUS");
+  gfx->drawLine(0, 40, 320, 40, WHITE);
+  
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(WHITE, BLACK);
+  gfx->setTextSize(1);
+  
+  if (btTargetName.length() > 0) {
+    gfx->setCursor(10, 65);
+    gfx->printf("Device: %s", btTargetName.c_str());
+  }
+  
+  if (btTargetMAC.length() > 0) {
+    gfx->setCursor(10, 95);
+    gfx->printf("MAC: %s", btTargetMAC.c_str());
+  }
+
+  // Auto-Reconnect Info
+  gfx->setTextColor(CYAN, BLACK);
+  gfx->setCursor(10, 125);
+  gfx->println("Status: " + String(isBluetoothConnected ? "Connected" : "Reconnecting..."));
+
+  // Disconnect button
+  bool connected = isBluetoothConnected;
+  uint16_t disColor = RED;
+  gfx->drawRoundRect(30, 146, 260, 28, 6, disColor);
+  gfx->setTextColor(disColor);
+  gfx->setCursor(100, 166);
+  gfx->print("DISCONNECT");
+}
+
 void BluetoothManager::runBLEScan() {
   gfx->fillScreen(BLACK);
   DisplayManager::drawTopBar();
@@ -232,6 +270,13 @@ bool BluetoothManager::connect(int deviceIndex) {
 
   NimBLEAddress targetAddr = btDevices[deviceIndex].bleAddress;
   Serial.printf("[BLE] Kapcsolódás: %s [%s]\n", btDevices[deviceIndex].name.c_str(), targetAddr.toString().c_str());
+  
+  btTargetMAC = targetAddr.toString().c_str();
+  btTargetName = btDevices[deviceIndex].name;
+  btTargetType = targetAddr.getType();
+  preferences.putString("bt_mac", btTargetMAC);
+  preferences.putString("bt_name", btTargetName);
+  preferences.putUChar("bt_type", btTargetType);
 
   if (pClient != nullptr) {
     if (pClient->isConnected())
@@ -374,6 +419,117 @@ bool BluetoothManager::connect(int deviceIndex) {
   gfx->setTextSize(1);
   gfx->setCursor(70, 75);
   gfx->print("Verifying OBD...");
+
+  delay(500);
+  
+  if (!ObdManager::initOBD()) {
+    disconnect();
+    return false;
+  }
+  
+  return true;
+}
+
+bool BluetoothManager::connectByMAC(String mac) {
+  if (bleConnecting) return false;
+  bleConnecting = true;
+  
+  Serial.printf("[BLE] Auto-reconnect to [%s]\n", mac.c_str());
+
+  if (pClient != nullptr) {
+    if (pClient->isConnected())
+      pClient->disconnect();
+    NimBLEDevice::deleteClient(pClient);
+    pClient = nullptr;
+    delay(200);
+  }
+
+  pClient = NimBLEDevice::createClient();
+  pClient->setClientCallbacks(new MyClientCallbacks());
+
+  // KLÓN-KOMPATIBILIS PARAMÉTEREK
+  pClient->setConnectionParams(32, 80, 0, 500);
+  pClient->setConnectTimeout(5000);
+
+  NimBLEAddress targetAddr(std::string(mac.c_str()), btTargetType);
+  
+  if (!pClient->connect(targetAddr)) {
+    Serial.println("[BLE] Kapcsolódás sikertelen (auto-reconnect)!");
+    NimBLEDevice::deleteClient(pClient);
+    pClient = nullptr;
+    bleConnecting = false;
+    return false;
+  }
+
+  Serial.println("[BLE] Fizikai kapcsolat sikeres! Várakozás a GATT felépülésre (1.5 mp)...");
+  delay(1500);
+
+  auto pServices = pClient->getServices(true);
+  if (pServices.empty()) {
+    pClient->disconnect();
+    bleConnecting = false;
+    return false;
+  }
+
+  pTxChar = nullptr;
+  pRxChar = nullptr;
+  NimBLERemoteService *pObdSvc = nullptr;
+
+  for (auto pSvc : pServices) {
+    String svcUUID = pSvc->getUUID().toString().c_str();
+    svcUUID.toLowerCase();
+    if (svcUUID.indexOf("fff0") >= 0 || svcUUID.indexOf("ffe0") >= 0 || svcUUID.indexOf("ae30") >= 0) {
+      pObdSvc = pSvc;
+      break;
+    }
+  }
+
+  if (pObdSvc != nullptr) {
+    auto pChars = pObdSvc->getCharacteristics(true);
+    for (auto pChr : pChars) {
+      if ((pChr->canNotify() || pChr->canIndicate()) && pRxChar == nullptr)
+        pRxChar = pChr;
+      else if ((pChr->canWrite() || pChr->canWriteNoResponse()) && pTxChar == nullptr)
+        pTxChar = pChr;
+    }
+  } else {
+    // Fallback SPP
+    for (auto pSvc : pServices) {
+      String svcUUID = pSvc->getUUID().toString().c_str();
+      svcUUID.toLowerCase();
+      if (svcUUID.indexOf("1800") >= 0 || svcUUID.indexOf("1801") >= 0) continue;
+      auto pChars = pSvc->getCharacteristics(true);
+      for (auto pChr : pChars) {
+        if ((pChr->canWrite() || pChr->canWriteNoResponse()) && pTxChar == nullptr)
+          pTxChar = pChr;
+        else if (pChr->canNotify() && pRxChar == nullptr)
+          pRxChar = pChr;
+      }
+      if (pTxChar && pRxChar) break;
+    }
+  }
+
+  if (pTxChar == nullptr || pRxChar == nullptr) {
+    disconnect();
+    return false;
+  }
+
+  if (pRxChar->canNotify()) {
+    pRxChar->subscribe(true, ObdManager::onBLENotify);
+    delay(200);
+    NimBLERemoteDescriptor *p2902 = pRxChar->getDescriptor(NimBLEUUID((uint16_t)0x2902));
+    if (p2902 != nullptr) {
+      uint8_t notifyOn[] = {0x01, 0x00};
+      p2902->writeValue(notifyOn, 2, true);
+    }
+  }
+
+  pRxChar->subscribe(true, ObdManager::onBLENotify);
+  isBluetoothConnected = true;
+  bleConnecting = false;
+  obdBufIndex = 0;
+  obdBuffer[0] = '\0';
+  lastOBDValue = "";
 
   delay(500);
   
