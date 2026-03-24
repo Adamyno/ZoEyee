@@ -322,25 +322,24 @@ void ObdManager::readHvacBlocking() {
   switchToECU("744", "764");
   obdCurrentECU = 1;
 
-  // 2. Re-apply Flow Control settings for multi-frame responses
-  sendATAndWait("ATFCSD300000");  // FC: ContinueToSend, BS=0, STmin=0
-  sendATAndWait("ATFCSM1");       // User-defined FC mode
+  // 2. Flow Control: try AUTOMATIC mode (clone-friendly)
+  sendATAndWait("ATFCSD300000");
+  sendATAndWait("ATFCSM0");  // Auto FC mode (better on clones than mode 1)
 
   // 3. Set ELM327 timeout to max for multi-frame HVAC responses
-  sendATAndWait("ATSTFF");  // Max timeout (~1s per frame wait)
+  sendATAndWait("ATSTFF");
 
-  // 4. Open vendor diagnostic session on HVAC (Renault uses C0, not 03!)
+  // 4. Open vendor diagnostic session on HVAC
   String sessResp = sendAndWaitResponse("10C0", 2000);
   Serial.printf("[OBD] HVAC session resp: '%s'\n", sessResp.c_str());
 
   // =================================================================
-  // 5. Query 2121 – Contains CABIN TEMP (CanZE: IH_InCarTemp)
-  //    Bits 26-35, resolution 0.1, offset 400 → (raw * 0.1) - 40.0
+  // 5. Query 2121 – CABIN TEMP (CanZE: IH_InCarTemp)
+  //    Bits 26-35, res 0.1, offset 400 → (raw * 0.1) - 40.0
   // =================================================================
   String resp2121 = sendAndWaitResponse("2121", 4000);
-  Serial.printf("[OBD] 2121 resp: '%s'\n", resp2121.c_str());
+  Serial.printf("[OBD] 2121 resp (%d chars): '%s'\n", resp2121.length(), resp2121.c_str());
   if (resp2121.indexOf("6121") >= 0 || resp2121.indexOf("61 21") >= 0) {
-    // IH_InCarTemp: bits 26-35 (10 bits), formula: raw * 0.1 - 40.0
     int rawCabin = parseUDSBits(resp2121, "6121", 26, 35);
     if (rawCabin >= 0) {
       obdCabinTemp = (rawCabin * 0.1f) - 40.0f;
@@ -349,31 +348,66 @@ void ObdManager::readHvacBlocking() {
   }
 
   // =================================================================
-  // 6. Query 2144 – AC Compressor RPM
-  //    IH_ClimCompRPMStatus: bits 107-116, resolution 10
+  // 6. Query 2143 – ExternalTemp, ACPressure (CanZE HVAC_Fields.csv)
+  //    IH_ExternalTemp: bits 110-117, res 1, offset 40 → raw - 40
+  //    IH_ACHighPressureSensor: bits 134-142, res 0.1, offset 0
+  //    NOTE: These need multi-frame response (>14 bytes).
+  //    If only single-frame arrives, these will be skipped.
   // =================================================================
-  String resp2144 = sendAndWaitResponse("2144", 4000);
-  Serial.printf("[OBD] 2144 resp: '%s'\n", resp2144.c_str());
-  if (resp2144.indexOf("6144") >= 0 || resp2144.indexOf("61 44") >= 0) {
-    int raw = parseUDSBits(resp2144, "6144", 107, 116);
-    if (raw >= 0) {
-      obdACRpm = raw * 10;
-      Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
+  String resp2143 = sendAndWaitResponse("2143", 4000);
+  Serial.printf("[OBD] 2143 resp (%d chars): '%s'\n", resp2143.length(), resp2143.c_str());
+  if (resp2143.indexOf("6143") >= 0 || resp2143.indexOf("61 43") >= 0) {
+    // Try to get ExternalTemp (needs multi-frame, bits 110-117)
+    int rawExt = parseUDSBits(resp2143, "6143", 110, 117);
+    if (rawExt >= 0) {
+      float extTemp = rawExt - 40.0f;
+      Serial.printf("[ZOE] External Temp = %.0f C (raw=%d)\n", extTemp, rawExt);
+    } else {
+      Serial.println("[ZOE] ExternalTemp: response too short (single frame?)");
+    }
+    // Try to get ACPressure (needs multi-frame, bits 134-142)
+    int rawPress = parseUDSBits(resp2143, "6143", 134, 142);
+    if (rawPress >= 0) {
+      obdACPressure = rawPress * 0.1f;
+      Serial.printf("[ZOE] AC Pressure = %.1f bar (raw=%d)\n", obdACPressure, rawPress);
+    } else {
+      Serial.println("[ZOE] ACPressure: response too short (single frame?)");
     }
   }
 
-  // NOTE: 2143 response is truncated (multi-frame, only first frame arrives).
-  // ExternalTemp (bits 110-117) and ACPressure (bits 134-142) are unreachable.
-  // Skipping for now.
+  // =================================================================
+  // 7. Query 2144 – AC Compressor RPM
+  //    IH_ClimCompRPMStatus: bits 107-116, res 10 (needs multi-frame)
+  //    OH_ClimCompressorSpeedRpmRequest: bits 52-61, res 10 (almost reachable)
+  // =================================================================
+  String resp2144 = sendAndWaitResponse("2144", 4000);
+  Serial.printf("[OBD] 2144 resp (%d chars): '%s'\n", resp2144.length(), resp2144.c_str());
+  if (resp2144.indexOf("6144") >= 0 || resp2144.indexOf("61 44") >= 0) {
+    // Try actual RPM status first (bits 107-116, needs multi-frame)
+    int raw = parseUDSBits(resp2144, "6144", 107, 116);
+    if (raw >= 0) {
+      obdACRpm = raw * 10;
+      Serial.printf("[ZOE] AC RPM = %.0f rpm (raw=%d)\n", obdACRpm, raw);
+    } else {
+      // Fallback: try RPM request value (bits 52-61)
+      int rawReq = parseUDSBits(resp2144, "6144", 52, 61);
+      if (rawReq >= 0) {
+        obdACRpm = rawReq * 10;
+        Serial.printf("[ZOE] AC RPM (req) = %.0f rpm (raw=%d)\n", obdACRpm, rawReq);
+      } else {
+        Serial.println("[ZOE] AC RPM: response too short (single frame?)");
+      }
+    }
+  }
 
-  // 7. Restore normal ELM327 timeout
+  // 8. Restore normal ELM327 timeout and FC mode
   sendATAndWait("ATST32");
 
-  // 8. Switch back to EVC
+  // 9. Switch back to EVC
   switchToECU("7E4", "7EC");
   obdCurrentECU = 0;
 
-  // 9. Update display with new data
+  // 10. Update display with new data
   lastOBDRxTime = millis();
   DisplayManager::updateHomeOBD();
 
