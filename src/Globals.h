@@ -87,8 +87,6 @@ extern CachedDevice btDevices[];
 extern int btTotalDevices;
 
 // BLE List Scrolling & Selection
-extern int btListScrollY;
-extern int btListMaxScrollY;
 extern int btSelectedDeviceIndex;
 
 // Touch variables
@@ -113,6 +111,8 @@ extern bool wifiAPActive;
 extern bool wifiAutoSave;
 extern String wifiPassword;
 extern String wifiTargetSSID;
+extern unsigned long wifiTransitionTime;
+extern State wifiNextState;
 
 // Keyboard layout
 extern const char *kbRowsLower[];

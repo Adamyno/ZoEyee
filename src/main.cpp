@@ -91,6 +91,17 @@ void loop() {
   WebConsole::handleClient(); // Process incoming Web Console HTTP requests
   TouchManager::processGestures();
 
+  // WiFi Connection State Transition Timer
+  if (currentState == STATE_WIFI_CONNECTING && wifiTransitionTime > 0 && millis() > wifiTransitionTime) {
+    wifiTransitionTime = 0;
+    currentState = wifiNextState;
+    if (currentState == STATE_WIFI_STATUS) {
+      WifiManager::showStatus();
+    } else if (currentState == STATE_WIFI_MENU) {
+      WifiManager::showMenu();
+    }
+  }
+
   // Auto-scroll update for BT List
   if (currentState == STATE_BT_LIST && btTotalDevices > 0) {
     if (btDevices[btSelectedDeviceIndex].name.length() > 18) {
