@@ -141,7 +141,16 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
 
 void ObdManager::sendCommand(const char *cmd) {
   if (pTxChar != nullptr && isBluetoothConnected) {
+    if (cmd == nullptr) {
+      return;
+    }
+
     char fullCmd[64];
+    if (strlen(cmd) + 2 > sizeof(fullCmd)) {
+      Serial.println("[OBD] Error: Command too long, dropping.");
+      return;
+    }
+
     snprintf(fullCmd, sizeof(fullCmd), "%s\r", cmd);
     pTxChar->writeValue((uint8_t *)fullCmd, strlen(fullCmd));
     Serial.printf("[OBD] Sent: %s\n", cmd);
