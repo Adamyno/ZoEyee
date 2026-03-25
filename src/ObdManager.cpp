@@ -392,10 +392,7 @@ bool ObdManager::initOBD() {
   switchToECU("7E4", "7EC");
 
   // Open extended diagnostic session
-  lastOBDValue = "";
-  sendCommand("10C0");
-  delay(500);
-  lastOBDValue = "";
+  sendAndWaitResponse("10C0", 500);
 
   obdZoeMode = true;
   obdPollIndex = 0;
