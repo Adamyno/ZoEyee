@@ -313,8 +313,10 @@ void WifiManager::showStatus() {
 
     gfx->setTextColor(WHITE);
     gfx->setCursor(10, 90);
-    gfx->print("SSID: ZoEyee-Config");
+    gfx->printf("SSID: %s", WIFI_AP_SSID);
     gfx->setCursor(10, 115);
+    gfx->printf("PASS: %s", WIFI_AP_PASS);
+    gfx->setCursor(10, 140);
     gfx->printf("IP: %s", WiFi.softAPIP().toString().c_str());
   } else if (WiFi.status() == WL_CONNECTED) {
     gfx->setTextColor(GREEN);
