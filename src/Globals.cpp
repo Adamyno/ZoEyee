@@ -55,8 +55,6 @@ int obdCurrentECU = 0;  // 0=EVC, 1=HVAC
 CachedDevice btDevices[MAX_BLE_DEVICES];
 int btTotalDevices = 0;
 
-int btListScrollY = 0;
-int btListMaxScrollY = 0;
 int btSelectedDeviceIndex = -1;
 
 int lastX = -1, lastY = -1;

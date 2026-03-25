@@ -88,8 +88,6 @@ extern CachedDevice btDevices[];
 extern int btTotalDevices;
 
 // BLE List Scrolling & Selection
-extern int btListScrollY;
-extern int btListMaxScrollY;
 extern int btSelectedDeviceIndex;
 
 // Touch variables
