@@ -378,7 +378,114 @@ void DisplayManager::showHome() {
 }
 
 void DisplayManager::updateHomeOBD() {
-  showHome();
+  // Differential update: only redraw cells whose values have changed.
+  // This prevents the full-screen flicker and keeps touch responsive.
+
+  static float prevValues[6] = {-999, -999, -999, -999, -999, -999};
+  static bool firstRun = true;
+
+  if (firstRun || currentState != STATE_HOME) {
+    showHome();
+    prevValues[0] = (float)obdSOH;
+    prevValues[1] = obdSOC;
+    prevValues[2] = obdCabinTemp;
+    prevValues[3] = obdHVBatTemp;
+    prevValues[4] = obdACRpm;
+    prevValues[5] = obdACPressure;
+    firstRun = false;
+    return;
+  }
+
+  const int cols = 2;
+  const int cellW = 160;
+  const int cellH = 57;  // 172 / 3
+
+  struct CellUpdate {
+    float newValue;
+    float noDataSentinel;
+    const char *unit;
+    bool isInt;
+    int iconType;
+  };
+
+  CellUpdate cells[6] = {
+    {(float)obdSOH,   -1,  "%",  true,  0},
+    {obdSOC,          -1,  "%",  false, 1},
+    {obdCabinTemp,    -99, "\xB0" "C", false, 2},
+    {obdHVBatTemp,    -99, "\xB0" "C", false, 3},
+    {obdACRpm,        -1,  "",   true,  4},
+    {obdACPressure,   -1,  "",   false, 5},
+  };
+
+  for (int i = 0; i < 6; i++) {
+    // Skip if value hasn't changed (use small epsilon for floats)
+    float diff = cells[i].newValue - prevValues[i];
+    if (diff < 0) diff = -diff;
+    if (diff < 0.05f) continue;
+
+    // Value changed — update just the text area of this cell
+    prevValues[i] = cells[i].newValue;
+
+    int col = i % cols;
+    int row = i / cols;
+    int x0 = col * cellW;
+    int y0 = row * cellH;
+
+    // Clear only the text area (right side of cell, after icon)
+    int textAreaX = x0 + 44;
+    int textAreaW = cellW - 46;
+    int textAreaY = y0 + 2;
+    int textAreaH = cellH - 4;
+    gfx->fillRect(textAreaX, textAreaY, textAreaW, textAreaH, BLACK);
+
+    // Redraw value
+    gfx->setFont(&FreeSans24pt7b);
+    gfx->setTextColor(WHITE);
+    gfx->setTextSize(1);
+
+    int textX = x0 + 48;
+    int textY = y0 + cellH / 2 + 18;
+    bool hasData = (cells[i].newValue > cells[i].noDataSentinel);
+
+    if (hasData) {
+      char buf[16];
+      if (cells[i].isInt) {
+        snprintf(buf, sizeof(buf), "%d", (int)cells[i].newValue);
+      } else {
+        if (cells[i].iconType == 5) {
+          snprintf(buf, sizeof(buf), "%.1f", cells[i].newValue);
+        } else {
+          snprintf(buf, sizeof(buf), "%.0f", cells[i].newValue);
+        }
+      }
+      gfx->setCursor(textX, textY);
+      gfx->print(buf);
+
+      // Draw unit
+      int16_t x1, y1;
+      uint16_t w, h;
+      gfx->getTextBounds(buf, textX, textY, &x1, &y1, &w, &h);
+      int unitX = textX + w + 2;
+      gfx->setFont(&FreeSans9pt7b);
+      gfx->setTextColor(0xBDF7);
+      if (cells[i].iconType == 4) {
+        gfx->setCursor(unitX, textY);
+        gfx->print("RPM");
+      } else if (cells[i].iconType == 5) {
+        gfx->setCursor(unitX, textY);
+        gfx->print("Bar");
+      } else if (strlen(cells[i].unit) > 0) {
+        gfx->setCursor(unitX, textY);
+        gfx->print(cells[i].unit);
+      }
+    } else {
+      gfx->setCursor(textX, textY);
+      gfx->print("--");
+    }
+  }
+
+  // Update status LED (tiny area, no flicker)
+  drawStatusLED();
 }
 
 // ── Status LED ──────────────────────────────────────────────
