@@ -235,142 +235,224 @@ void DisplayManager::setBrightness(int val) {
   ledcWrite(TFT_BL, currentBrightness);
 }
 
+// ============================================================
+// DashParam system: each parameter has display metadata + icon
+// ============================================================
+
+struct DashParam {
+  const char *label;         // Short name: "SOH", "SOC", etc.
+  const char *unit;          // Unit string: "%", "°C", "RPM", "Bar"
+  float noDataSentinel;      // Below this = no data
+  bool isInt;                // Show as integer?
+  int decimals;              // 0 or 1
+  uint16_t iconColor;        // Primary icon color (RGB565)
+  void (*drawIcon)(Arduino_GFX *g, int cx, int cy, uint16_t color);
+};
+
+// --- Icon drawing functions ---
+
+static void drawIconHeart(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Heart: two filled circles (top) + filled triangle (bottom)
+  int r = 5;
+  g->fillCircle(cx - 5, cy - 4, r, color);
+  g->fillCircle(cx + 5, cy - 4, r, color);
+  g->fillTriangle(cx - 10, cy - 2, cx + 10, cy - 2, cx, cy + 10, color);
+  // Smooth the gap between circles and triangle
+  g->fillRect(cx - 5, cy - 4, 10, 4, color);
+}
+
+static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Bold lightning bolt
+  g->fillTriangle(cx - 2, cy - 12, cx + 7, cy - 12, cx - 1, cy, color);
+  g->fillTriangle(cx + 1, cy - 2, cx - 7, cy + 12, cx + 2, cy, color);
+  g->fillRect(cx - 2, cy - 3, 5, 5, color);
+}
+
+static void drawIconThermometer(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Bulb at bottom + stem
+  g->fillCircle(cx, cy + 8, 6, color);
+  g->fillRoundRect(cx - 3, cy - 12, 6, 20, 3, color);
+  // Inner mercury (darker shade)
+  uint16_t inner = 0xFB00; // darker orange/red
+  g->fillCircle(cx, cy + 8, 3, inner);
+  g->fillRect(cx - 1, cy - 6, 2, 12, inner);
+  // Tick marks
+  g->drawLine(cx + 4, cy - 8, cx + 7, cy - 8, 0x7BEF);
+  g->drawLine(cx + 4, cy - 4, cx + 6, cy - 4, 0x7BEF);
+  g->drawLine(cx + 4, cy,     cx + 7, cy,     0x7BEF);
+}
+
+static void drawIconBatteryTemp(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Battery outline
+  g->drawRoundRect(cx - 12, cy - 10, 16, 22, 2, color);
+  g->fillRect(cx - 8, cy - 12, 8, 3, color);
+  // Battery level bars
+  g->fillRect(cx - 10, cy + 4, 12, 3, color);
+  g->fillRect(cx - 10, cy - 1, 12, 3, color);
+  g->fillRect(cx - 10, cy - 6, 12, 3, color);
+  // Small thermometer on the right
+  g->fillCircle(cx + 10, cy + 6, 3, 0xF800); // red bulb
+  g->fillRect(cx + 9, cy - 6, 2, 12, 0xF800);
+}
+
+static void drawIconSnowflake(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // 6-spoke snowflake with crystal branches
+  for (int a = 0; a < 6; a++) {
+    float angle = a * 3.14159f / 3.0f;
+    int ex = cx + (int)(12 * cos(angle));
+    int ey = cy + (int)(12 * sin(angle));
+    g->drawLine(cx, cy, ex, ey, color);
+    // Crystal branches at 2/3 distance
+    float bA1 = angle + 0.55f;
+    float bA2 = angle - 0.55f;
+    int mx = cx + (int)(8 * cos(angle));
+    int my = cy + (int)(8 * sin(angle));
+    g->drawLine(mx, my, mx + (int)(4*cos(bA1)), my + (int)(4*sin(bA1)), color);
+    g->drawLine(mx, my, mx + (int)(4*cos(bA2)), my + (int)(4*sin(bA2)), color);
+  }
+  g->fillCircle(cx, cy, 2, color); // center dot
+}
+
+static void drawIconGauge(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Pressure gauge: half-circle arc + needle
+  // Draw arc (top half of circle, using line segments)
+  for (int a = 180; a <= 360; a += 8) {
+    float rad = a * 3.14159f / 180.0f;
+    int x1 = cx + (int)(11 * cos(rad));
+    int y1 = cy + (int)(11 * sin(rad));
+    float rad2 = (a + 8) * 3.14159f / 180.0f;
+    int x2 = cx + (int)(11 * cos(rad2));
+    int y2 = cy + (int)(11 * sin(rad2));
+    g->drawLine(x1, y1, x2, y2, color);
+  }
+  // Thicker arc
+  for (int a = 180; a <= 360; a += 8) {
+    float rad = a * 3.14159f / 180.0f;
+    int x1 = cx + (int)(10 * cos(rad));
+    int y1 = cy + (int)(10 * sin(rad));
+    float rad2 = (a + 8) * 3.14159f / 180.0f;
+    int x2 = cx + (int)(10 * cos(rad2));
+    int y2 = cy + (int)(10 * sin(rad2));
+    g->drawLine(x1, y1, x2, y2, color);
+  }
+  // Needle (pointing to ~2 o'clock = 300°)
+  float needleRad = 310 * 3.14159f / 180.0f;
+  int nx = cx + (int)(8 * cos(needleRad));
+  int ny = cy + (int)(8 * sin(needleRad));
+  g->drawLine(cx, cy, nx, ny, WHITE);
+  g->drawLine(cx+1, cy, nx+1, ny, WHITE);
+  // Center pivot
+  g->fillCircle(cx, cy, 2, WHITE);
+  // Base line
+  g->drawLine(cx - 11, cy + 1, cx + 11, cy + 1, color);
+}
+
+// --- Dashboard parameter definitions ---
+// This array drives the entire home screen layout.
+// Future: user can swap entries per slot via long-press picker.
+
+static DashParam dashParams[] = {
+  {"SOH",   "%",            -1,  true,  0, 0xF800, drawIconHeart},        // Red heart
+  {"SOC",   "%",            -1,  false, 0, 0x07E0, drawIconLightning},    // Green bolt
+  {"Cabin", "\xB0" "C",    -99, false, 0, 0xFD20, drawIconThermometer},  // Orange thermo
+  {"Bat",   "\xB0" "C",    -99, false, 0, 0x07FF, drawIconBatteryTemp},  // Cyan bat+thermo
+  {"RPM",   "RPM",          -1, true,  0, 0x419F, drawIconSnowflake},    // Blue snowflake
+  {"Press", "Bar",           -1, false, 1, 0xFFE0, drawIconGauge},        // Yellow gauge
+};
+
+// Helper: get current OBD value for slot index
+static float getSlotValue(int slotIndex) {
+  switch (slotIndex) {
+    case 0: return (float)obdSOH;
+    case 1: return obdSOC;
+    case 2: return obdCabinTemp;
+    case 3: return obdHVBatTemp;
+    case 4: return obdACRpm;
+    case 5: return obdACPressure;
+    default: return -999;
+  }
+}
+
+// Helper: draw value + unit text for a cell
+static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
+                          const DashParam &param, float value) {
+  int textX = x0 + 48;
+  int textY = y0 + cellH / 2 + 18;
+  bool hasData = (value > param.noDataSentinel);
+
+  g->setFont(&FreeSans24pt7b);
+  g->setTextColor(WHITE);
+  g->setTextSize(1);
+
+  if (hasData) {
+    char buf[16];
+    if (param.isInt) {
+      snprintf(buf, sizeof(buf), "%d", (int)value);
+    } else if (param.decimals >= 1) {
+      snprintf(buf, sizeof(buf), "%.1f", value);
+    } else {
+      snprintf(buf, sizeof(buf), "%.0f", value);
+    }
+    g->setCursor(textX, textY);
+    g->print(buf);
+
+    // Unit in smaller font
+    int16_t bx, by;
+    uint16_t bw, bh;
+    g->getTextBounds(buf, textX, textY, &bx, &by, &bw, &bh);
+    int unitX = textX + bw + 2;
+    g->setFont(&FreeSans9pt7b);
+    g->setTextColor(0xBDF7); // light grey
+    g->setCursor(unitX, textY);
+    g->print(param.unit);
+  } else {
+    g->setCursor(textX, textY);
+    g->print("--");
+  }
+}
+
 void DisplayManager::showHome() {
   gfx->fillScreen(BLACK);
 
-  // === Fullscreen 3x2 Grid Dashboard ===
-  const int gridW = 320;
-  const int gridH = 172;
   const int cols = 2;
   const int rows = 3;
-  const int cellW = gridW / cols;   // 160
-  const int cellH = gridH / rows;   // 57
+  const int cellW = 160;
+  const int cellH = 57;  // 172 / 3
 
   // Draw grid lines (subtle dark grey)
-  gfx->drawLine(cellW, 0, cellW, gridH, 0x4208);
+  gfx->drawLine(cellW, 0, cellW, 172, 0x4208);
   for (int r = 1; r < rows; r++) {
-    gfx->drawLine(0, r * cellH, gridW, r * cellH, 0x4208);
+    gfx->drawLine(0, r * cellH, 320, r * cellH, 0x4208);
   }
-
-  struct CellData {
-    int iconType;
-    float value;
-    float noDataSentinel;
-    const char *unit;
-    bool isInt;
-  };
-
-  CellData cells[6] = {
-    {0, (float)obdSOH,   -1,  "%",  true },  // SOH
-    {1, obdSOC,          -1,  "%",  false},  // SOC
-    {2, obdCabinTemp,    -99, "\xB0" "C",  false},  // Cabin
-    {3, obdHVBatTemp,    -99, "\xB0" "C",  false},  // Battery
-    {4, obdACRpm,       -1,  "",    true },  // AC RPM
-    {5, obdACPressure,   -1,  "",    false},  // AC Pressure
-  };
 
   for (int i = 0; i < 6; i++) {
     int col = i % cols;
     int row = i / cols;
     int x0 = col * cellW;
     int y0 = row * cellH;
-    int cx = x0 + 24;
-    int cy = y0 + cellH / 2;
+    int cx = x0 + 22;
+    int cy = y0 + 18;  // icon center (upper part of cell)
 
-    // --- Draw icon ---
-    uint16_t ic = 0x7BEF;
-    switch (cells[i].iconType) {
-      case 0: // Battery health (SOH)
-        gfx->drawRect(cx-8, cy-12, 16, 24, ic);
-        gfx->fillRect(cx-3, cy-14, 6, 3, ic);
-        gfx->fillCircle(cx-3, cy-2, 2, ic);
-        gfx->fillCircle(cx+3, cy-2, 2, ic);
-        gfx->fillTriangle(cx-5, cy-1, cx+5, cy-1, cx, cy+5, ic);
-        break;
-      case 1: // Battery charge (SOC)
-        gfx->drawRect(cx-8, cy-12, 16, 24, ic);
-        gfx->fillRect(cx-3, cy-14, 6, 3, ic);
-        gfx->drawLine(cx+2, cy-8, cx-3, cy, ic);
-        gfx->drawLine(cx-3, cy, cx+2, cy, ic);
-        gfx->drawLine(cx+2, cy, cx-3, cy+8, ic);
-        break;
-      case 2: // Thermometer (cabin)
-        gfx->drawCircle(cx, cy+7, 5, ic);
-        gfx->fillRect(cx-2, cy-12, 4, 16, ic);
-        gfx->fillCircle(cx, cy+7, 3, ic);
-        gfx->drawRect(cx-3, cy-13, 6, 2, ic);
-        break;
-      case 3: // Battery+temp
-        gfx->drawRect(cx-10, cy-10, 12, 20, ic);
-        gfx->fillRect(cx-7, cy-12, 6, 3, ic);
-        gfx->drawCircle(cx+8, cy+5, 3, ic);
-        gfx->fillRect(cx+7, cy-8, 2, 12, ic);
-        break;
-      case 4: // Snowflake (AC RPM)
-      case 5: // Snowflake (AC Pressure)
-        // 6-spoke snowflake
-        for (int a = 0; a < 6; a++) {
-          float angle = a * 3.14159f / 3.0f;
-          int ex = cx + (int)(11 * cos(angle));
-          int ey = cy + (int)(11 * sin(angle));
-          gfx->drawLine(cx, cy, ex, ey, ic);
-          // small branches
-          float bAngle1 = angle + 0.5f;
-          float bAngle2 = angle - 0.5f;
-          int mx = cx + (int)(7 * cos(angle));
-          int my = cy + (int)(7 * sin(angle));
-          gfx->drawLine(mx, my, mx + (int)(4*cos(bAngle1)), my + (int)(4*sin(bAngle1)), ic);
-          gfx->drawLine(mx, my, mx + (int)(4*cos(bAngle2)), my + (int)(4*sin(bAngle2)), ic);
-        }
-        break;
+    // Draw colored icon
+    const DashParam &p = dashParams[i];
+    if (p.drawIcon) {
+      p.drawIcon(gfx, cx, cy, p.iconColor);
     }
 
-    // --- Draw value ---
-    gfx->setFont(&FreeSans24pt7b);
-    gfx->setTextColor(WHITE);
+    // Draw label below icon
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(p.iconColor);
     gfx->setTextSize(1);
+    // Center the label text under the icon
+    int16_t lx, ly;
+    uint16_t lw, lh;
+    gfx->getTextBounds(p.label, 0, 0, &lx, &ly, &lw, &lh);
+    gfx->setCursor(cx - lw / 2, y0 + 42);
+    gfx->print(p.label);
 
-    int textX = x0 + 48;
-    int textY = y0 + cellH / 2 + 18;
-    bool hasData = (cells[i].value > cells[i].noDataSentinel);
-
-    if (hasData) {
-      char buf[16];
-      if (cells[i].isInt) {
-        snprintf(buf, sizeof(buf), "%d", (int)cells[i].value);
-      } else {
-        if (cells[i].iconType == 5) {
-          snprintf(buf, sizeof(buf), "%.1f", cells[i].value);
-        } else {
-          snprintf(buf, sizeof(buf), "%.0f", cells[i].value);
-        }
-      }
-      gfx->setCursor(textX, textY);
-      gfx->print(buf);
-
-      // Draw unit in smaller font after value
-      int16_t x1, y1;
-      uint16_t w, h;
-      gfx->getTextBounds(buf, textX, textY, &x1, &y1, &w, &h);
-      int unitX = textX + w + 2;
-      gfx->setFont(&FreeSans9pt7b);
-      gfx->setTextColor(0xBDF7); // light grey
-      if (cells[i].iconType == 4) {
-        // AC RPM
-        gfx->setCursor(unitX, textY);
-        gfx->print("RPM");
-      } else if (cells[i].iconType == 5) {
-        // AC Pressure
-        gfx->setCursor(unitX, textY);
-        gfx->print("Bar");
-      } else if (strlen(cells[i].unit) > 0) {
-        gfx->setCursor(unitX, textY);
-        gfx->print(cells[i].unit);
-      }
-    } else {
-      gfx->setCursor(textX, textY);
-      gfx->print("--");
-    }
+    // Draw value + unit
+    float val = getSlotValue(i);
+    drawCellValue(gfx, x0, y0, cellH, p, val);
   }
 
   // Draw status LED overlaying top-right corner
@@ -379,112 +461,40 @@ void DisplayManager::showHome() {
 
 void DisplayManager::updateHomeOBD() {
   // Differential update: only redraw cells whose values have changed.
-  // This prevents the full-screen flicker and keeps touch responsive.
-
   static float prevValues[6] = {-999, -999, -999, -999, -999, -999};
   static bool firstRun = true;
 
   if (firstRun || currentState != STATE_HOME) {
     showHome();
-    prevValues[0] = (float)obdSOH;
-    prevValues[1] = obdSOC;
-    prevValues[2] = obdCabinTemp;
-    prevValues[3] = obdHVBatTemp;
-    prevValues[4] = obdACRpm;
-    prevValues[5] = obdACPressure;
+    for (int i = 0; i < 6; i++) prevValues[i] = getSlotValue(i);
     firstRun = false;
     return;
   }
 
   const int cols = 2;
   const int cellW = 160;
-  const int cellH = 57;  // 172 / 3
-
-  struct CellUpdate {
-    float newValue;
-    float noDataSentinel;
-    const char *unit;
-    bool isInt;
-    int iconType;
-  };
-
-  CellUpdate cells[6] = {
-    {(float)obdSOH,   -1,  "%",  true,  0},
-    {obdSOC,          -1,  "%",  false, 1},
-    {obdCabinTemp,    -99, "\xB0" "C", false, 2},
-    {obdHVBatTemp,    -99, "\xB0" "C", false, 3},
-    {obdACRpm,        -1,  "",   true,  4},
-    {obdACPressure,   -1,  "",   false, 5},
-  };
+  const int cellH = 57;
 
   for (int i = 0; i < 6; i++) {
-    // Skip if value hasn't changed (use small epsilon for floats)
-    float diff = cells[i].newValue - prevValues[i];
+    float newVal = getSlotValue(i);
+    float diff = newVal - prevValues[i];
     if (diff < 0) diff = -diff;
     if (diff < 0.05f) continue;
 
-    // Value changed — update just the text area of this cell
-    prevValues[i] = cells[i].newValue;
+    prevValues[i] = newVal;
 
     int col = i % cols;
     int row = i / cols;
     int x0 = col * cellW;
     int y0 = row * cellH;
 
-    // Clear only the text area (right side of cell, after icon)
-    int textAreaX = x0 + 44;
-    int textAreaW = cellW - 46;
-    int textAreaY = y0 + 2;
-    int textAreaH = cellH - 4;
-    gfx->fillRect(textAreaX, textAreaY, textAreaW, textAreaH, BLACK);
+    // Clear only the text area (right side of cell, after icon+label)
+    gfx->fillRect(x0 + 44, y0 + 2, cellW - 46, cellH - 4, BLACK);
 
-    // Redraw value
-    gfx->setFont(&FreeSans24pt7b);
-    gfx->setTextColor(WHITE);
-    gfx->setTextSize(1);
-
-    int textX = x0 + 48;
-    int textY = y0 + cellH / 2 + 18;
-    bool hasData = (cells[i].newValue > cells[i].noDataSentinel);
-
-    if (hasData) {
-      char buf[16];
-      if (cells[i].isInt) {
-        snprintf(buf, sizeof(buf), "%d", (int)cells[i].newValue);
-      } else {
-        if (cells[i].iconType == 5) {
-          snprintf(buf, sizeof(buf), "%.1f", cells[i].newValue);
-        } else {
-          snprintf(buf, sizeof(buf), "%.0f", cells[i].newValue);
-        }
-      }
-      gfx->setCursor(textX, textY);
-      gfx->print(buf);
-
-      // Draw unit
-      int16_t x1, y1;
-      uint16_t w, h;
-      gfx->getTextBounds(buf, textX, textY, &x1, &y1, &w, &h);
-      int unitX = textX + w + 2;
-      gfx->setFont(&FreeSans9pt7b);
-      gfx->setTextColor(0xBDF7);
-      if (cells[i].iconType == 4) {
-        gfx->setCursor(unitX, textY);
-        gfx->print("RPM");
-      } else if (cells[i].iconType == 5) {
-        gfx->setCursor(unitX, textY);
-        gfx->print("Bar");
-      } else if (strlen(cells[i].unit) > 0) {
-        gfx->setCursor(unitX, textY);
-        gfx->print(cells[i].unit);
-      }
-    } else {
-      gfx->setCursor(textX, textY);
-      gfx->print("--");
-    }
+    // Redraw value + unit
+    drawCellValue(gfx, x0, y0, cellH, dashParams[i], newVal);
   }
 
-  // Update status LED (tiny area, no flicker)
   drawStatusLED();
 }
 
