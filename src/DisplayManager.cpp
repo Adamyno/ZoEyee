@@ -231,7 +231,7 @@ void DisplayManager::initLCD() {
 }
 
 void DisplayManager::setBrightness(int val) {
-  currentBrightness = constrain(val, 0, 255);
+  currentBrightness = constrain(val, 1, 255);
   ledcWrite(TFT_BL, currentBrightness);
 }
 

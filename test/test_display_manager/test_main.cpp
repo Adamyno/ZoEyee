@@ -42,19 +42,19 @@ void tearDown(void) {
 
 void test_setBrightness_negative(void) {
     DisplayManager::setBrightness(-50);
-    TEST_ASSERT_EQUAL(0, currentBrightness);
+    TEST_ASSERT_EQUAL(1, currentBrightness);
 #ifndef ARDUINO
     TEST_ASSERT_EQUAL(TFT_BL, last_ledc_pin);
-    TEST_ASSERT_EQUAL(0, last_ledc_val);
+    TEST_ASSERT_EQUAL(1, last_ledc_val);
 #endif
 }
 
 void test_setBrightness_zero(void) {
     DisplayManager::setBrightness(0);
-    TEST_ASSERT_EQUAL(0, currentBrightness);
+    TEST_ASSERT_EQUAL(1, currentBrightness);
 #ifndef ARDUINO
     TEST_ASSERT_EQUAL(TFT_BL, last_ledc_pin);
-    TEST_ASSERT_EQUAL(0, last_ledc_val);
+    TEST_ASSERT_EQUAL(1, last_ledc_val);
 #endif
 }
 
