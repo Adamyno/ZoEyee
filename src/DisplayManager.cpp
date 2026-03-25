@@ -253,50 +253,86 @@ struct DashParam {
 
 static void drawIconHeart(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   // Heart: two filled circles (top) + filled triangle (bottom)
-  int r = 5;
-  g->fillCircle(cx - 5, cy - 4, r, color);
-  g->fillCircle(cx + 5, cy - 4, r, color);
-  g->fillTriangle(cx - 10, cy - 2, cx + 10, cy - 2, cx, cy + 10, color);
-  // Smooth the gap between circles and triangle
-  g->fillRect(cx - 5, cy - 4, 10, 4, color);
+  // Shifted up by 4px and widened to ~28px as requested
+  int r = 7;
+  int dy = -4; // Shift up
+  g->fillCircle(cx - 7, cy - 6 + dy, r, color);
+  g->fillCircle(cx + 7, cy - 6 + dy, r, color);
+  g->fillTriangle(cx - 14, cy - 3 + dy, cx + 14, cy - 3 + dy, cx, cy + 14 + dy, color);
+  // Smooth the gap
+  g->fillRect(cx - 7, cy - 6 + dy, 14, 4, color);
 }
 static void drawIconBatterySOC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Large white battery outline
-  g->drawRoundRect(cx - 11, cy - 13, 22, 26, 3, WHITE);
-  g->drawRoundRect(cx - 10, cy - 12, 20, 24, 2, WHITE);
-  g->fillRect(cx - 4, cy - 16, 8, 4, WHITE);  // battery terminal cap
-  // Yellow lightning bolt inside battery
+  // Big battery outline filling ~28x44 area (proportional battery shape)
+  // Battery body: 28w x 40h, centered at (cx, cy+4)
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
+  // Battery terminal cap (top center)
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+  // Yellow lightning bolt ⚡ drawn as a polygon (zigzag shape)
+  // Classic bolt: top-right → middle-left → jog right → bottom-left
   uint16_t bolt = 0xFFE0;
-  g->fillTriangle(cx + 2, cy - 9, cx - 3, cy - 9, cx - 1, cy + 1, bolt);
-  g->fillTriangle(cx - 2, cy + 1, cx + 3, cy + 1, cx + 1, cy + 9, bolt);
-  g->fillRect(cx - 2, cy - 1, 4, 3, bolt);  // connect the two triangles
+  //        A(cx+4,cy-12)
+  //       /|
+  //      / |
+  //     /  |
+  //  D(cx-6,cy)---C(cx+2,cy)
+  //               |
+  //  E(cx-2,cy+1)-F(cx+6,cy+1)
+  //    \  |
+  //     \ |
+  //      \|
+  //     G(cx-4,cy+16)
+  // Upper part: A-B-C-D quadrilateral as 2 triangles
+  g->fillTriangle(cx + 4, cy - 12, cx - 2, cy - 12, cx - 6, cy, bolt);  // A-B-D
+  g->fillTriangle(cx + 4, cy - 12, cx - 6, cy, cx + 2, cy, bolt);       // A-D-C
+  // Lower part: E-F-G as triangle
+  g->fillTriangle(cx - 2, cy + 1, cx + 6, cy + 1, cx - 4, cy + 16, bolt); // E-F-G
+  // Fill the connection area between upper and lower
+  g->fillRect(cx - 4, cy - 1, 8, 4, bolt);
 }
 
 static void drawIconThermometerBig(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Larger thermometer: bigger bulb, taller stem
-  g->fillCircle(cx, cy + 10, 8, color);       // big outer bulb
-  g->fillRoundRect(cx - 4, cy - 14, 8, 24, 4, color); // wide stem
-  // Inner mercury
-  uint16_t inner = 0x8000;  // dark red
-  g->fillCircle(cx, cy + 10, 5, inner);
-  g->fillRect(cx - 2, cy - 8, 4, 16, inner);
-  // Tick marks (right side)
-  g->drawLine(cx + 5, cy - 10, cx + 9, cy - 10, 0x7BEF);
-  g->drawLine(cx + 5, cy - 5,  cx + 8, cy - 5,  0x7BEF);
-  g->drawLine(cx + 5, cy,      cx + 9, cy,      0x7BEF);
-  g->drawLine(cx + 5, cy + 5,  cx + 8, cy + 5,  0x7BEF);
+  // Tall thermometer filling ~16x48 area
+  // Outer bulb at bottom (radius 9)
+  g->fillCircle(cx, cy + 17, 9, color);
+  // Tall stem from top to bulb
+  g->fillRoundRect(cx - 5, cy - 22, 10, 39, 5, color);
+  // Inner mercury (bright red)
+  uint16_t inner = 0xF800; // Bright red
+  g->fillCircle(cx, cy + 17, 6, inner);
+  g->fillRect(cx - 3, cy - 14, 6, 29, inner);
+  // Tick marks (right side of stem)
+  uint16_t tick = 0x7BEF;
+  g->drawLine(cx + 6, cy - 18, cx + 10, cy - 18, tick);
+  g->drawLine(cx + 6, cy - 12, cx + 9,  cy - 12, tick);
+  g->drawLine(cx + 6, cy - 6,  cx + 10, cy - 6,  tick);
+  g->drawLine(cx + 6, cy,      cx + 9,  cy,      tick);
+  g->drawLine(cx + 6, cy + 6,  cx + 10, cy + 6,  tick);
 }
 
 static void drawIconBatteryThermo(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Large white battery outline (same as SOC)
-  g->drawRoundRect(cx - 11, cy - 13, 22, 26, 3, WHITE);
-  g->drawRoundRect(cx - 10, cy - 12, 20, 24, 2, WHITE);
-  g->fillRect(cx - 4, cy - 16, 8, 4, WHITE);  // terminal cap
-  // Red thermometer inside battery
-  uint16_t red = 0xF800;
-  g->fillCircle(cx, cy + 7, 4, red);    // bulb
-  g->fillRect(cx - 1, cy - 7, 3, 14, red);   // stem
-  g->fillCircle(cx, cy + 7, 2, 0x8000); // inner bulb
+  // Big battery outline filling ~28x44 (same size as SOC battery)
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
+  // Battery terminal cap
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+  // Detailed thermometer inside battery (white + bright red)
+  uint16_t thOuter = WHITE;   // White thermometer body
+  uint16_t thInner = 0xF800;  // Bright red mercury
+  // Outer bulb (bottom)
+  g->fillCircle(cx, cy + 14, 6, thOuter);
+  // Stem
+  g->fillRoundRect(cx - 3, cy - 10, 6, 24, 3, thOuter);
+  // Inner mercury (bright red)
+  g->fillCircle(cx, cy + 14, 3, thInner);
+  g->fillRect(cx - 1, cy - 5, 3, 17, thInner);
+  // Tick marks inside battery
+  g->drawLine(cx + 4, cy - 6, cx + 7, cy - 6, 0x7BEF);
+  g->drawLine(cx + 4, cy - 1, cx + 6, cy - 1, 0x7BEF);
+  g->drawLine(cx + 4, cy + 4, cx + 7, cy + 4, 0x7BEF);
 }
 
 static void drawIconSnowflake(Arduino_GFX *g, int cx, int cy, uint16_t color) {
@@ -359,7 +395,7 @@ static DashParam dashParams[] = {
   // label   unit   sentinel  isInt  dec  color   drawIcon
   {"SOH",   "%",    -1,  true,  0, 0xF800, drawIconHeart},         // Red heart
   {"",      "%",    -1,  false, 0, 0xFFFF, drawIconBatterySOC},    // White bat + yellow bolt (no label)
-  {"Cabin", "\xB0""C", -99, false, 0, 0xFD20, drawIconThermometerBig}, // Orange thermo, vertical label
+  {"IN",    "\xB0""C", -99, false, 0, WHITE,  drawIconThermometerBig}, // White thermo, rotated "IN" label
   {"",      "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo}, // White bat + red thermo (no label)
   {"RPM",   "RPM",  -1,  true,  0, 0xB7FF, drawIconSnowflake},    // Light-blue snowflake
   {"BAR",   "Bar",  -1,  false, 1, 0xB7FF, drawIconSnowflake},    // Same snowflake, BAR label
@@ -436,7 +472,7 @@ void DisplayManager::showHome() {
     int x0 = col * cellW;
     int y0 = row * cellH;
     int cx = x0 + 22;
-    int cy = y0 + 18;  // icon center (upper part of cell)
+    int cy = y0 + 26;  // icon center (moved down 8px)
 
     // Draw colored icon
     const DashParam &p = dashParams[i];
@@ -451,17 +487,20 @@ void DisplayManager::showHome() {
       gfx->setTextSize(1);
 
       if (i == 2) {
-        // Cabin: draw label vertically on the left edge of the cell
-        // Each character drawn top-to-bottom, rotated 90° using setRotation
-        // Since GFX doesn't support per-text rotation easily, draw chars
-        // top-to-bottom at x=x0+6, stepping ~11px per char
-        int charY = y0 + 8;
-        for (const char *ch = p.label; *ch != '\0'; ch++) {
-          char buf[2] = {*ch, '\0'};
-          gfx->setCursor(x0 + 2, charY);
-          gfx->print(buf);
-          charY += 12;
-        }
+        // "IN" label rotated 90° (sideways, read by tilting head right)
+        // Use setRotation to draw sideways, then restore
+        gfx->setRotation(0);  // Portrait: text draws top-to-bottom
+        // Map landscape coords (x0+2, y0+8) to portrait orientation
+        // In rotation 1 (landscape): pixel (lx,ly) = portrait (172-1-ly, lx)
+        // So portrait coords: px = 172-1-(y0+20), py = x0+2
+        int px = 172 - 1 - (y0 + 30);
+        int py = x0 + 2;
+        gfx->setFont(&FreeSans9pt7b);
+        gfx->setTextColor(p.iconColor);
+        gfx->setTextSize(1);
+        gfx->setCursor(px, py + 14);
+        gfx->print(p.label);
+        gfx->setRotation(1);  // Restore landscape
       } else {
         // Center label below the icon
         int16_t lx, ly;
