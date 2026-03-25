@@ -162,14 +162,14 @@ void WifiManager::showKeyboard() {
   gfx->fillScreen(BLACK);
 
   // Password display bar
-  gfx->fillRect(0, 0, 320, 24, 0x18E3); // Dark gray bar
+  gfx->fillRect(KB_BAR_X, KB_BAR_Y, KB_BAR_W, KB_BAR_H, KB_BAR_COLOR); // Dark gray bar
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
   gfx->setTextSize(1);
-  gfx->setCursor(5, 17);
+  gfx->setCursor(KB_PW_TEXT_X, KB_PW_TEXT_Y);
   String displayPw = wifiPassword;
-  if (displayPw.length() > 28)
-    displayPw = displayPw.substring(displayPw.length() - 28);
+  if (displayPw.length() > KB_PW_MAX_LEN)
+    displayPw = displayPw.substring(displayPw.length() - KB_PW_MAX_LEN);
   gfx->print(displayPw.c_str());
   gfx->setTextColor(CYAN);
   gfx->print("_");
