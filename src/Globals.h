@@ -111,6 +111,8 @@ extern bool wifiAPActive;
 extern bool wifiAutoSave;
 extern String wifiPassword;
 extern String wifiTargetSSID;
+extern unsigned long wifiTransitionTime;
+extern State wifiNextState;
 
 // Keyboard layout
 extern const char *kbRowsLower[];

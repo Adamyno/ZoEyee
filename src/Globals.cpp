@@ -72,6 +72,8 @@ bool wifiAPActive = false;
 bool wifiAutoSave = false;
 String wifiPassword = "";
 String wifiTargetSSID = "";
+unsigned long wifiTransitionTime = 0;
+State wifiNextState = STATE_WIFI_MENU;
 
 const char *kbRowsLower[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
 const char *kbRowsUpper[] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
