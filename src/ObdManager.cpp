@@ -65,7 +65,11 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
   for (size_t i = 0; i < length; i++) {
     char c = (char)pData[i];
     if (c == '>') {
-      obdBuffer[obdBufIndex] = '\0';
+      if (obdBufIndex < (int)sizeof(obdBuffer)) {
+        obdBuffer[obdBufIndex] = '\0';
+      } else {
+        obdBuffer[sizeof(obdBuffer) - 1] = '\0';
+      }
 
       String fullResponse = "";
       char *ptr = obdBuffer;
@@ -129,8 +133,9 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
       lastOBDValue = fullResponse;
       Serial.printf("[OBD] Response: '%s'\n", lastOBDValue.c_str());
     } else if (c != '\n') {
-      if (obdBufIndex < (int)sizeof(obdBuffer) - 1)
+      if (obdBufIndex < (int)sizeof(obdBuffer) - 1) {
         obdBuffer[obdBufIndex++] = c;
+      }
     }
   }
 }
