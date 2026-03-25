@@ -177,16 +177,14 @@ void WifiManager::showKeyboard() {
   // Draw keyboard
   const char **rows =
       kbNumbers ? kbRowsNum : (kbShift ? kbRowsUpper : kbRowsLower);
-  int keyW = 28, keyH = 28;
-  int startYkb = 28;
 
   for (int r = 0; r < 3; r++) {
     int rowLen = strlen(rows[r]);
-    int rowStartX = (320 - rowLen * keyW) / 2;
+    int rowStartX = (320 - rowLen * KB_KEY_W) / 2;
     for (int c = 0; c < rowLen; c++) {
-      int kx = rowStartX + c * keyW;
-      int ky = startYkb + r * (keyH + 4);
-      gfx->drawRoundRect(kx, ky, keyW - 2, keyH, 4, 0x7BEF);
+      int kx = rowStartX + c * KB_KEY_W;
+      int ky = KB_START_Y + r * (KB_KEY_H + 4);
+      gfx->drawRoundRect(kx, ky, KB_KEY_W - 2, KB_KEY_H, 4, 0x7BEF);
       gfx->setFont(&FreeSans9pt7b);
       gfx->setTextColor(WHITE);
       gfx->setCursor(kx + 7, ky + 20);
@@ -196,48 +194,48 @@ void WifiManager::showKeyboard() {
   }
 
   // Bottom row: Shift/123, Space, Backspace, OK
-  int btnY = startYkb + 3 * (keyH + 4);
+  int btnY = KB_START_Y + 3 * (KB_KEY_H + 4);
 
   // Shift / 123 button
-  gfx->drawRoundRect(5, btnY, 55, keyH, 4, YELLOW);
+  gfx->drawRoundRect(KB_BTN_SHIFT_X, btnY, KB_BTN_SHIFT_W, KB_KEY_H, 4, YELLOW);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(YELLOW);
-  gfx->setCursor(12, btnY + 20);
+  gfx->setCursor(KB_BTN_SHIFT_X + 7, btnY + 20);
   if (kbNumbers)
     gfx->print("abc");
   else if (kbShift)
     gfx->print("123");
   else
-    gfx->fillTriangle(20, btnY + 22, 32, btnY + 6, 44, btnY + 22,
+    gfx->fillTriangle(KB_BTN_SHIFT_X + 15, btnY + 22, KB_BTN_SHIFT_X + 27, btnY + 6, KB_BTN_SHIFT_X + 39, btnY + 22,
                       YELLOW); // Shift arrow
 
   // Space bar
-  gfx->drawRoundRect(65, btnY, 120, keyH, 4, 0x7BEF);
+  gfx->drawRoundRect(KB_BTN_SPACE_X, btnY, KB_BTN_SPACE_W, KB_KEY_H, 4, 0x7BEF);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(0x7BEF);
-  gfx->setCursor(100, btnY + 20);
+  gfx->setCursor(KB_BTN_SPACE_X + 35, btnY + 20);
   gfx->print("SPACE");
 
   // Backspace / Back
   if (wifiPassword.length() == 0) {
-    gfx->fillRoundRect(190, btnY, 55, keyH, 4, RED);
+    gfx->fillRoundRect(KB_BTN_DEL_X, btnY, KB_BTN_DEL_W, KB_KEY_H, 4, RED);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(WHITE);
-    gfx->setCursor(193, btnY + 20);
+    gfx->setCursor(KB_BTN_DEL_X + 3, btnY + 20);
     gfx->print("BACK");
   } else {
-    gfx->drawRoundRect(190, btnY, 55, keyH, 4, RED);
+    gfx->drawRoundRect(KB_BTN_DEL_X, btnY, KB_BTN_DEL_W, KB_KEY_H, 4, RED);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(RED);
-    gfx->setCursor(200, btnY + 20);
+    gfx->setCursor(KB_BTN_DEL_X + 10, btnY + 20);
     gfx->print("DEL");
   }
 
   // OK button
-  gfx->fillRoundRect(250, btnY, 65, keyH, 4, GREEN);
+  gfx->fillRoundRect(KB_BTN_OK_X, btnY, KB_BTN_OK_W, KB_KEY_H, 4, GREEN);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(BLACK);
-  gfx->setCursor(268, btnY + 20);
+  gfx->setCursor(KB_BTN_OK_X + 18, btnY + 20);
   gfx->print("OK");
 }
 

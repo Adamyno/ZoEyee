@@ -308,18 +308,16 @@ void TouchManager::processGestures() {
             // Keyboard touch detection
             const char **rows =
                 kbNumbers ? kbRowsNum : (kbShift ? kbRowsUpper : kbRowsLower);
-            int keyW = 28, keyH = 28;
-            int startYkb = 28;
             bool handled = false;
 
             for (int r = 0; r < 3 && !handled; r++) {
               int rowLen = strlen(rows[r]);
-              int rowStartX = (320 - rowLen * keyW) / 2;
+              int rowStartX = (320 - rowLen * WifiManager::KB_KEY_W) / 2;
               for (int c = 0; c < rowLen; c++) {
-                int kx = rowStartX + c * keyW;
-                int ky = startYkb + r * (keyH + 4);
-                if (startX >= kx && startX <= kx + keyW && startY >= ky &&
-                    startY <= ky + keyH) {
+                int kx = rowStartX + c * WifiManager::KB_KEY_W;
+                int ky = WifiManager::KB_START_Y + r * (WifiManager::KB_KEY_H + 4);
+                if (startX >= kx && startX <= kx + WifiManager::KB_KEY_W && startY >= ky &&
+                    startY <= ky + WifiManager::KB_KEY_H) {
                   wifiPassword += rows[r][c];
                   if (kbShift)
                     kbShift = false; // Auto-off shift after one char
@@ -331,9 +329,9 @@ void TouchManager::processGestures() {
             }
 
             if (!handled) {
-              int btnY = startYkb + 3 * (keyH + 4);
-              if (startY >= btnY && startY <= btnY + keyH) {
-                if (startX >= 5 && startX <= 60) {
+              int btnY = WifiManager::KB_START_Y + 3 * (WifiManager::KB_KEY_H + 4);
+              if (startY >= btnY && startY <= btnY + WifiManager::KB_KEY_H) {
+                if (startX >= WifiManager::KB_BTN_SHIFT_X && startX <= WifiManager::KB_BTN_SHIFT_X + WifiManager::KB_BTN_SHIFT_W) {
                   // Shift / 123 toggle: lowercase→Shift, Shift→123,
                   // 123→lowercase
                   if (kbNumbers) {
@@ -346,11 +344,11 @@ void TouchManager::processGestures() {
                     kbShift = true;
                   }
                   WifiManager::showKeyboard();
-                } else if (startX >= 65 && startX <= 185) {
+                } else if (startX >= WifiManager::KB_BTN_SPACE_X && startX <= WifiManager::KB_BTN_SPACE_X + WifiManager::KB_BTN_SPACE_W) {
                   // Space
                   wifiPassword += ' ';
                   WifiManager::showKeyboard();
-                } else if (startX >= 190 && startX <= 245) {
+                } else if (startX >= WifiManager::KB_BTN_DEL_X && startX <= WifiManager::KB_BTN_DEL_X + WifiManager::KB_BTN_DEL_W) {
                   // Backspace or BACK
                   if (wifiPassword.length() > 0) {
                     wifiPassword.remove(wifiPassword.length() - 1);
@@ -360,7 +358,7 @@ void TouchManager::processGestures() {
                     currentState = STATE_WIFI_LIST;
                     WifiManager::showList();
                   }
-                } else if (startX >= 250 && startX <= 315) {
+                } else if (startX >= WifiManager::KB_BTN_OK_X && startX <= WifiManager::KB_BTN_OK_X + WifiManager::KB_BTN_OK_W) {
                   // OK → connect
                   WifiManager::connect();
                 }
