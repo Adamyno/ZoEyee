@@ -261,69 +261,42 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
   }
 
   if (frameType == '1') {
-    // FIRST frame: 1LLL DDDDDDDDDDDD (6 data bytes after 4 PCI nibbles)
-    if (resp.length() < 4) return "";
+    // FIRST frame detected. The ELM327 BLE clone returns ALL CAN frames
+    // (First + Consecutive) concatenated in one response string.
+    // Each CAN frame is 16 hex chars (8 bytes). We must strip PCI bytes:
+    //   First Frame: 4 PCI nibbles (1LLL), 12 data nibbles (6 bytes)
+    //   Consecutive:  2 PCI nibbles (2X),  14 data nibbles (7 bytes)
+    if (resp.length() < 16) return "";
+
     // Parse total length from nibbles 1-3
     String lenHex = resp.substring(1, 4);
     int totalLen = (int)strtol(lenHex.c_str(), NULL, 16);
-    // Data starts at nibble 4 (byte position 2 in the CAN frame)
-    String hexData = resp.substring(4);
-    Serial.printf("[OBD] IsoTP FIRST: totalLen=%d, firstData='%s'\n", totalLen, hexData.c_str());
 
-    // Calculate how many CONSECUTIVE frames we need
-    // First frame has 6 data bytes, consecutive frames have 7 each
-    int remaining = totalLen - 6;
-    int framesToReceive = (remaining + 6) / 7;  // ceiling
-    Serial.printf("[OBD] IsoTP: expecting %d consecutive frames\n", framesToReceive);
+    // First Frame data: skip 4 PCI nibbles, take 12 data nibbles (6 bytes)
+    String hexData = resp.substring(4, 16);
+    Serial.printf("[OBD] IsoTP FIRST: totalLen=%d, FF data='%s'\n", totalLen, hexData.c_str());
 
-    // MANUALLY send Flow Control frame!
-    // The ELM327 BLE clone sends '>' after First Frame without auto-FC.
-    // We must send FC ourselves: 30 00 00 = ContinueToSend, BS=0, STmin=0
-    lastOBDValue = "";
-    ObdManager::sendCommand("300000");
-    Serial.println("[OBD] IsoTP: sent manual FC (300000)");
-
-    // Wait for consecutive frames
-    int nextSeq = 1;
-    unsigned long t1 = millis();
-    while (framesToReceive > 0 && (millis() - t1 < timeoutMs)) {
-      delay(30);
-      if (lastOBDValue.length() > 0) {
-        String cf = lastOBDValue;
-        lastOBDValue = "";
-        cf.trim();
-        cf.replace(" ", "");
-        cf.toUpperCase();
-
-        Serial.printf("[OBD] IsoTP CF data: '%s'\n", cf.c_str());
-
-        // Process each line (may contain multiple \r-separated frames)
-        int startIdx = 0;
-        while (startIdx < (int)cf.length()) {
-          int endIdx = cf.indexOf('\r', startIdx);
-          if (endIdx < 0) endIdx = cf.length();
-          String line = cf.substring(startIdx, endIdx);
-          line.trim();
-          startIdx = endIdx + 1;
-
-          if (line.length() < 2) continue;
-          // Check for consecutive frame: 2X...
-          if (line.charAt(0) == '2') {
-            String frameData = line.substring(2);  // skip 2X PCI byte
-            hexData += frameData;
-            framesToReceive--;
-            nextSeq = (nextSeq + 1) & 0x0F;
-            Serial.printf("[OBD] IsoTP CF#%d: '%s' (%d remaining)\n", nextSeq-1, frameData.c_str(), framesToReceive);
-          }
-        }
+    // Parse inline Consecutive Frames (each 16 hex chars)
+    int pos = 16;  // start of next CAN frame
+    int cfCount = 0;
+    while (pos + 16 <= (int)resp.length()) {
+      String frame = resp.substring(pos, pos + 16);
+      // Verify it's a consecutive frame (starts with '2')
+      if (frame.charAt(0) == '2') {
+        // Skip 2 PCI nibbles (2X), take 14 data nibbles (7 bytes)
+        String cfData = frame.substring(2);
+        hexData += cfData;
+        cfCount++;
+        Serial.printf("[OBD] IsoTP CF#%d: '%s'\n", cfCount, cfData.c_str());
       }
+      pos += 16;
     }
 
-    // Trim to total length
+    // Trim to exact total length
     if ((int)hexData.length() > totalLen * 2)
       hexData = hexData.substring(0, totalLen * 2);
 
-    Serial.printf("[OBD] IsoTP assembled: %d bytes, '%s'\n", totalLen, hexData.c_str());
+    Serial.printf("[OBD] IsoTP assembled: %d bytes (%d CFs), '%s'\n", totalLen, cfCount, hexData.c_str());
     return hexData;
   }
 
