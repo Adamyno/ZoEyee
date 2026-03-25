@@ -145,6 +145,10 @@ void ObdManager::sendCommand(const char *cmd) {
     snprintf(fullCmd, sizeof(fullCmd), "%s\r", cmd);
     pTxChar->writeValue((uint8_t *)fullCmd, strlen(fullCmd));
     Serial.printf("[OBD] Sent: %s\n", cmd);
+    // TX logging to web console
+    String txLog = "TX: ";
+    txLog += cmd;
+    WebConsole::pushLog(txLog);
   }
 }
 
@@ -196,6 +200,129 @@ static String sendAndWaitResponse(const char *cmd, unsigned long timeoutMs = 300
     }
   }
   Serial.printf("[OBD] Data cmd '%s' no response within %lu ms\n", cmd, timeoutMs);
+  return "";
+}
+
+// ============================================================
+// ISO-TP request with manual multi-frame assembly.
+// Uses ATCAF0 + ATS0 (like CanZE) to get raw frames, then
+// reassembles SINGLE (0x) / FIRST (1xxx) + CONSECUTIVE (2x)
+// frames into a contiguous hex string.
+// ============================================================
+
+static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs = 5000) {
+  // Build the ISO-TP single frame: PCI byte + service data
+  // serviceCmd is like "2143" (2 bytes) -> PCI = "02" + "2143"
+  int dataLen = strlen(serviceCmd) / 2;  // hex nibbles to bytes
+  char isotpCmd[32];
+  snprintf(isotpCmd, sizeof(isotpCmd), "0%d%s", dataLen, serviceCmd);
+
+  lastOBDValue = "";
+  ObdManager::sendCommand(isotpCmd);
+
+  // Wait for first response line
+  unsigned long t0 = millis();
+  while (millis() - t0 < timeoutMs) {
+    delay(30);
+    if (lastOBDValue.length() > 0) break;
+  }
+  if (lastOBDValue.length() == 0) {
+    Serial.printf("[OBD] IsoTP '%s' no response within %lu ms\n", serviceCmd, timeoutMs);
+    return "";
+  }
+
+  String resp = lastOBDValue;
+  lastOBDValue = "";
+  resp.trim();
+  resp.replace(" ", "");  // remove any spaces
+  resp.toUpperCase();
+
+  Serial.printf("[OBD] IsoTP raw: '%s'\n", resp.c_str());
+
+  if (resp.length() < 2) return "";
+
+  // Check first nibble for frame type
+  char frameType = resp.charAt(0);
+
+  if (frameType == '0') {
+    // SINGLE frame: 0L DDDDDD...
+    // L = length, data follows
+    int len = 0;
+    if (resp.charAt(1) >= '0' && resp.charAt(1) <= '9')
+      len = resp.charAt(1) - '0';
+    else if (resp.charAt(1) >= 'A' && resp.charAt(1) <= 'F')
+      len = resp.charAt(1) - 'A' + 10;
+    String hexData = resp.substring(2);
+    // Trim to actual data length
+    if ((int)hexData.length() > len * 2)
+      hexData = hexData.substring(0, len * 2);
+    Serial.printf("[OBD] IsoTP SINGLE: len=%d data='%s'\n", len, hexData.c_str());
+    return hexData;
+  }
+
+  if (frameType == '1') {
+    // FIRST frame: 1LLL DDDDDDDDDDDD (6 data bytes after 4 PCI nibbles)
+    if (resp.length() < 4) return "";
+    // Parse total length from nibbles 1-3
+    String lenHex = resp.substring(1, 4);
+    int totalLen = (int)strtol(lenHex.c_str(), NULL, 16);
+    // Data starts at nibble 4 (byte position 2 in the CAN frame)
+    String hexData = resp.substring(4);
+    Serial.printf("[OBD] IsoTP FIRST: totalLen=%d, firstData='%s'\n", totalLen, hexData.c_str());
+
+    // Calculate how many CONSECUTIVE frames we need
+    // First frame has 6 data bytes, consecutive frames have 7 each
+    int remaining = totalLen - 6;
+    int framesToReceive = (remaining + 6) / 7;  // ceiling
+
+    // Wait for consecutive frames (they come as separate lines in lastOBDValue)
+    int nextSeq = 1;
+    unsigned long t1 = millis();
+    while (framesToReceive > 0 && (millis() - t1 < timeoutMs)) {
+      delay(30);
+      if (lastOBDValue.length() > 0) {
+        String cf = lastOBDValue;
+        lastOBDValue = "";
+        cf.trim();
+        cf.replace(" ", "");
+        cf.toUpperCase();
+
+        Serial.printf("[OBD] IsoTP NEXT: '%s'\n", cf.c_str());
+
+        // May contain multiple lines separated by \r
+        // Process each line
+        int startIdx = 0;
+        while (startIdx < (int)cf.length()) {
+          // Find next line boundary (\r or end)
+          int endIdx = cf.indexOf('\r', startIdx);
+          if (endIdx < 0) endIdx = cf.length();
+          String line = cf.substring(startIdx, endIdx);
+          line.trim();
+          startIdx = endIdx + 1;
+
+          if (line.length() < 2) continue;
+          // Check for consecutive frame: 2X...
+          if (line.charAt(0) == '2') {
+            // Sequence number is second nibble
+            String frameData = line.substring(2);  // skip 2X
+            hexData += frameData;
+            framesToReceive--;
+            nextSeq = (nextSeq + 1) & 0x0F;
+          }
+        }
+      }
+    }
+
+    // Trim to total length
+    if ((int)hexData.length() > totalLen * 2)
+      hexData = hexData.substring(0, totalLen * 2);
+
+    Serial.printf("[OBD] IsoTP assembled: %d bytes, '%s'\n", totalLen, hexData.c_str());
+    return hexData;
+  }
+
+  // Unexpected frame type (NO DATA, error, etc.)
+  Serial.printf("[OBD] IsoTP unexpected: '%s'\n", resp.c_str());
   return "";
 }
 
@@ -322,24 +449,25 @@ void ObdManager::readHvacBlocking() {
   switchToECU("744", "764");
   obdCurrentECU = 1;
 
-  // 2. Flow Control: try AUTOMATIC mode (clone-friendly)
-  sendATAndWait("ATFCSD300000");
-  sendATAndWait("ATFCSM0");  // Auto FC mode (better on clones than mode 1)
+  // 2. Switch to CanZE-compatible mode for multi-frame
+  sendATAndWait("ATS0");          // No spaces (raw hex concat)
+  sendATAndWait("ATCAF0");        // CAN Auto Formatting OFF
+  sendATAndWait("ATAL");           // Allow Long messages
+  sendATAndWait("ATFCSD300000");  // FC: ContinueToSend, BS=0, STmin=0
+  sendATAndWait("ATFCSM1");       // User-defined FC mode
+  sendATAndWait("ATSTFF");        // Max ELM327 timeout
 
-  // 3. Set ELM327 timeout to max for multi-frame HVAC responses
-  sendATAndWait("ATSTFF");
-
-  // 4. Open vendor diagnostic session on HVAC
-  String sessResp = sendAndWaitResponse("10C0", 2000);
-  Serial.printf("[OBD] HVAC session resp: '%s'\n", sessResp.c_str());
+  // 3. Open vendor diagnostic session on HVAC
+  String sessResp = sendIsoTpRequest("10C0", 2000);
+  Serial.printf("[OBD] HVAC session: '%s'\n", sessResp.c_str());
 
   // =================================================================
-  // 5. Query 2121 – CABIN TEMP (CanZE: IH_InCarTemp)
+  // 4. Query 2121 – CABIN TEMP (CanZE: IH_InCarTemp)
   //    Bits 26-35, res 0.1, offset 400 → (raw * 0.1) - 40.0
   // =================================================================
-  String resp2121 = sendAndWaitResponse("2121", 4000);
-  Serial.printf("[OBD] 2121 resp (%d chars): '%s'\n", resp2121.length(), resp2121.c_str());
-  if (resp2121.indexOf("6121") >= 0 || resp2121.indexOf("61 21") >= 0) {
+  String resp2121 = sendIsoTpRequest("2121", 5000);
+  Serial.printf("[OBD] 2121 IsoTP (%d chars): '%s'\n", resp2121.length(), resp2121.c_str());
+  if (resp2121.indexOf("6121") >= 0) {
     int rawCabin = parseUDSBits(resp2121, "6121", 26, 35);
     if (rawCabin >= 0) {
       obdCabinTemp = (rawCabin * 0.1f) - 40.0f;
@@ -348,66 +476,49 @@ void ObdManager::readHvacBlocking() {
   }
 
   // =================================================================
-  // 6. Query 2143 – ExternalTemp, ACPressure (CanZE HVAC_Fields.csv)
-  //    IH_ExternalTemp: bits 110-117, res 1, offset 40 → raw - 40
-  //    IH_ACHighPressureSensor: bits 134-142, res 0.1, offset 0
-  //    NOTE: These need multi-frame response (>14 bytes).
-  //    If only single-frame arrives, these will be skipped.
+  // 5. Query 2143 – ExternalTemp + ACPressure (multi-frame!)
+  //    IH_ExternalTemp: bits 110-117, res 1, offset 40
+  //    IH_ACHighPressureSensor: bits 134-142, res 0.1
   // =================================================================
-  String resp2143 = sendAndWaitResponse("2143", 4000);
-  Serial.printf("[OBD] 2143 resp (%d chars): '%s'\n", resp2143.length(), resp2143.c_str());
-  if (resp2143.indexOf("6143") >= 0 || resp2143.indexOf("61 43") >= 0) {
-    // Try to get ExternalTemp (needs multi-frame, bits 110-117)
+  String resp2143 = sendIsoTpRequest("2143", 5000);
+  Serial.printf("[OBD] 2143 IsoTP (%d chars): '%s'\n", resp2143.length(), resp2143.c_str());
+  if (resp2143.indexOf("6143") >= 0) {
     int rawExt = parseUDSBits(resp2143, "6143", 110, 117);
     if (rawExt >= 0) {
       float extTemp = rawExt - 40.0f;
       Serial.printf("[ZOE] External Temp = %.0f C (raw=%d)\n", extTemp, rawExt);
-    } else {
-      Serial.println("[ZOE] ExternalTemp: response too short (single frame?)");
     }
-    // Try to get ACPressure (needs multi-frame, bits 134-142)
     int rawPress = parseUDSBits(resp2143, "6143", 134, 142);
     if (rawPress >= 0) {
       obdACPressure = rawPress * 0.1f;
       Serial.printf("[ZOE] AC Pressure = %.1f bar (raw=%d)\n", obdACPressure, rawPress);
-    } else {
-      Serial.println("[ZOE] ACPressure: response too short (single frame?)");
     }
   }
 
   // =================================================================
-  // 7. Query 2144 – AC Compressor RPM
-  //    IH_ClimCompRPMStatus: bits 107-116, res 10 (needs multi-frame)
-  //    OH_ClimCompressorSpeedRpmRequest: bits 52-61, res 10 (almost reachable)
+  // 6. Query 2144 – AC Compressor RPM (multi-frame!)
+  //    IH_ClimCompRPMStatus: bits 107-116, res 10
   // =================================================================
-  String resp2144 = sendAndWaitResponse("2144", 4000);
-  Serial.printf("[OBD] 2144 resp (%d chars): '%s'\n", resp2144.length(), resp2144.c_str());
-  if (resp2144.indexOf("6144") >= 0 || resp2144.indexOf("61 44") >= 0) {
-    // Try actual RPM status first (bits 107-116, needs multi-frame)
+  String resp2144 = sendIsoTpRequest("2144", 5000);
+  Serial.printf("[OBD] 2144 IsoTP (%d chars): '%s'\n", resp2144.length(), resp2144.c_str());
+  if (resp2144.indexOf("6144") >= 0) {
     int raw = parseUDSBits(resp2144, "6144", 107, 116);
     if (raw >= 0) {
       obdACRpm = raw * 10;
       Serial.printf("[ZOE] AC RPM = %.0f rpm (raw=%d)\n", obdACRpm, raw);
-    } else {
-      // Fallback: try RPM request value (bits 52-61)
-      int rawReq = parseUDSBits(resp2144, "6144", 52, 61);
-      if (rawReq >= 0) {
-        obdACRpm = rawReq * 10;
-        Serial.printf("[ZOE] AC RPM (req) = %.0f rpm (raw=%d)\n", obdACRpm, rawReq);
-      } else {
-        Serial.println("[ZOE] AC RPM: response too short (single frame?)");
-      }
     }
   }
 
-  // 8. Restore normal ELM327 timeout and FC mode
-  sendATAndWait("ATST32");
+  // 7. Restore normal ELM327 mode for EVC queries
+  sendATAndWait("ATS1");     // Spaces back on
+  sendATAndWait("ATCAF1");   // CAN Auto Formatting ON
+  sendATAndWait("ATST32");   // Normal timeout
 
-  // 9. Switch back to EVC
+  // 8. Switch back to EVC
   switchToECU("7E4", "7EC");
   obdCurrentECU = 0;
 
-  // 10. Update display with new data
+  // 9. Update display with new data
   lastOBDRxTime = millis();
   DisplayManager::updateHomeOBD();
 
