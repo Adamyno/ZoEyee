@@ -22,7 +22,7 @@
 #define TOUCH_ADDR 0x63
 
 // Software Version
-#define SW_VERSION "v1.2.2-Stable"
+#define SW_VERSION "v1.3.0"
 
 // Color definitions (RGB 565)
 #define BLACK 0x0000

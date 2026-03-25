@@ -239,14 +239,105 @@ void DisplayManager::setBrightness(int val) {
 // DashParam system: each parameter has display metadata + icon
 // ============================================================
 
+// ============================================================
+// Color gradient system for value display
+// ============================================================
+
+struct ColorStop {
+  float value;
+  uint16_t color;
+};
+
+// RGB565 linear interpolation between two colors
+static uint16_t lerpColor565(uint16_t c1, uint16_t c2, float t) {
+  if (t <= 0.0f) return c1;
+  if (t >= 1.0f) return c2;
+  int r1 = (c1 >> 11) & 0x1F, g1 = (c1 >> 5) & 0x3F, b1 = c1 & 0x1F;
+  int r2 = (c2 >> 11) & 0x1F, g2 = (c2 >> 5) & 0x3F, b2 = c2 & 0x1F;
+  int r = r1 + (int)((r2 - r1) * t);
+  int g = g1 + (int)((g2 - g1) * t);
+  int b = b1 + (int)((b2 - b1) * t);
+  return ((r & 0x1F) << 11) | ((g & 0x3F) << 5) | (b & 0x1F);
+}
+
+// Map a value to a color using gradient stops
+static uint16_t mapValueToColor(float value, const ColorStop *stops, int count) {
+  if (value <= stops[0].value) return stops[0].color;
+  if (value >= stops[count - 1].value) return stops[count - 1].color;
+  for (int i = 0; i < count - 1; i++) {
+    if (value <= stops[i + 1].value) {
+      float t = (value - stops[i].value) / (stops[i + 1].value - stops[i].value);
+      return lerpColor565(stops[i].color, stops[i + 1].color, t);
+    }
+  }
+  return stops[count - 1].color;
+}
+
+// --- Color functions for each parameter type ---
+
+static uint16_t colorWhite(float v) { return WHITE; }
+
+// Battery temp: <22 light blue, 22-32 green, 33-36 orange, 37+ red
+static uint16_t colorBatTemp(float v) {
+  static const ColorStop stops[] = {
+    {18.0f, 0xAEFF},   // light blue
+    {22.0f, 0xAEFF},   // light blue
+    {24.0f, 0x07E0},   // green
+    {32.0f, 0x07E0},   // green
+    {34.5f, 0xFD20},   // orange
+    {36.0f, 0xFD20},   // orange
+    {37.0f, 0xF800},   // red
+  };
+  return mapValueToColor(v, stops, 7);
+}
+
+// AC RPM: 0-900 d-green, 900-1400 l-green, 1500-3500 blue, 3500-4500 orange, 4500-6500 red, 6500+ purple
+static uint16_t colorACRpm(float v) {
+  static const ColorStop stops[] = {
+    {0.0f,    0x03A0},   // dark green
+    {900.0f,  0x03A0},   // dark green
+    {1200.0f, 0x07E0},   // light green
+    {1400.0f, 0x07E0},   // light green
+    {1600.0f, 0xAEFF},   // blue start
+    {3400.0f, 0xAEFF},   // blue end
+    {3600.0f, 0xFD20},   // orange start
+    {4400.0f, 0xFD20},   // orange end
+    {4600.0f, 0xF800},   // red start
+    {6200.0f, 0xF800},   // red end
+    {6600.0f, 0xD01F},   // purple start
+  };
+  return mapValueToColor(v, stops, 11);
+}
+
+// AC Pressure: <7 red, 7-10 orange, 10-15 green, 15-18 light blue, 18+ purple
+static uint16_t colorACPressure(float v) {
+  static const ColorStop stops[] = {
+    {4.0f,  0xF800},   // red
+    {7.0f,  0xF800},   // red
+    {8.5f,  0xFD20},   // orange
+    {10.0f, 0xFD20},   // orange
+    {12.0f, 0x07E0},   // green
+    {15.0f, 0x07E0},   // green
+    {16.5f, 0xAEFF},   // light blue
+    {18.0f, 0xAEFF},   // light blue
+    {20.0f, 0xD01F},   // purple
+  };
+  return mapValueToColor(v, stops, 9);
+}
+
+// ============================================================
+// DashParam system: each parameter has display metadata + icon
+// ============================================================
+
 struct DashParam {
   const char *label;         // Short name: "SOH", "SOC", etc.
-  const char *unit;          // Unit string: "%", "°C", "RPM", "Bar"
+  const char *unit;          // Unit string: "%", "°C", "", etc.
   float noDataSentinel;      // Below this = no data
   bool isInt;                // Show as integer?
   int decimals;              // 0 or 1
   uint16_t iconColor;        // Primary icon color (RGB565)
   void (*drawIcon)(Arduino_GFX *g, int cx, int cy, uint16_t color);
+  uint16_t (*getValueColor)(float value);  // Dynamic text color
 };
 
 // --- Icon drawing functions ---
@@ -392,13 +483,13 @@ static void drawIconGauge(Arduino_GFX *g, int cx, int cy, uint16_t color) {
 // Future: user can swap entries per slot via long-press picker.
 
 static DashParam dashParams[] = {
-  // label   unit   sentinel  isInt  dec  color   drawIcon
-  {"SOH",   "%",    -1,  true,  0, 0xF800, drawIconHeart},         // Red heart
-  {"",      "%",    -1,  false, 0, 0xFFFF, drawIconBatterySOC},    // White bat + yellow bolt (no label)
-  {"IN",    "\xB0""C", -99, false, 0, WHITE,  drawIconThermometerBig}, // White thermo, rotated "IN" label
-  {"",      "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo}, // White bat + red thermo (no label)
-  {"RPM",   "RPM",  -1,  true,  0, 0xB7FF, drawIconSnowflake},    // Light-blue snowflake
-  {"BAR",   "Bar",  -1,  false, 1, 0xB7FF, drawIconSnowflake},    // Same snowflake, BAR label
+  // label   unit   sentinel  isInt  dec  color   drawIcon              getValueColor
+  {"SOH",   "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite},
+  {"",      "%",    -1,  false, 0, 0xFFFF, drawIconBatterySOC,     colorWhite},
+  {"IN",    "\xB0""C", -99, false, 0, WHITE,  drawIconThermometerBig, colorWhite},
+  {"",      "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo,  colorBatTemp},
+  {"RPM",   "",     -1,  true,  0, 0xB7FF, drawIconSnowflake,      colorACRpm},
+  {"BAR",   "",     -1,  false, 1, 0xB7FF, drawIconSnowflake,      colorACPressure},
 };
 
 // Helper: get current OBD value for slot index
@@ -421,8 +512,14 @@ static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
   int textY = y0 + cellH / 2 + 18;
   bool hasData = (value > param.noDataSentinel);
 
+  // Get dynamic text color for this value
+  uint16_t valColor = WHITE;
+  if (param.getValueColor && hasData) {
+    valColor = param.getValueColor(value);
+  }
+
   g->setFont(&FreeSans24pt7b);
-  g->setTextColor(WHITE);
+  g->setTextColor(valColor);
   g->setTextSize(1);
 
   if (hasData) {
@@ -437,15 +534,17 @@ static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
     g->setCursor(textX, textY);
     g->print(buf);
 
-    // Unit in smaller font
-    int16_t bx, by;
-    uint16_t bw, bh;
-    g->getTextBounds(buf, textX, textY, &bx, &by, &bw, &bh);
-    int unitX = textX + bw + 2;
-    g->setFont(&FreeSans9pt7b);
-    g->setTextColor(0xBDF7); // light grey
-    g->setCursor(unitX, textY);
-    g->print(param.unit);
+    // Unit in smaller font (only if unit string is non-empty)
+    if (strlen(param.unit) > 0) {
+      int16_t bx, by;
+      uint16_t bw, bh;
+      g->getTextBounds(buf, textX, textY, &bx, &by, &bw, &bh);
+      int unitX = textX + bw + 2;
+      g->setFont(&FreeSans9pt7b);
+      g->setTextColor(0xBDF7); // light grey
+      g->setCursor(unitX, textY);
+      g->print(param.unit);
+    }
   } else {
     g->setCursor(textX, textY);
     g->print("--");
