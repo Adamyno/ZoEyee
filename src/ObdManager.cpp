@@ -15,22 +15,37 @@ int parseUDSHex(const String &resp, const char *expectedPrefix, int byteCount) {
   String prefix = String(expectedPrefix);
   prefix.replace(" ", "");
   int idx = r.indexOf(prefix);
-  if (idx < 0)
+  if (idx < 0) {
     return -1;
-  String hexPart =
-      r.substring(idx + prefix.length(), idx + prefix.length() + byteCount * 2);
-  return (int)strtol(hexPart.c_str(), NULL, 16);
+  }
+
+  int startPos = idx + prefix.length();
+  if (r.length() < (unsigned int)(startPos + byteCount * 2)) {
+    return -1;
+  }
+
+  char buf[33];
+  int len = byteCount * 2;
+  if (len > 32) {
+    len = 32;
+  }
+  memcpy(buf, r.c_str() + startPos, len);
+  buf[len] = '\0';
+
+  return (int)strtol(buf, NULL, 16);
 }
 
-int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit, int endBit) {
+int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit,
+                 int endBit) {
   String r = resp;
   r.trim();
   r.replace(" ", "");
   String prefix = String(expectedPrefix);
   prefix.replace(" ", "");
   int idx = r.indexOf(prefix);
-  if (idx < 0)
+  if (idx < 0) {
     return -1;
+  }
 
   String fullHex = r.substring(idx);
 
@@ -42,9 +57,12 @@ int parseUDSBits(const String &resp, const char *expectedPrefix, int startBit, i
   }
 
   uint64_t val = 0;
+  char byteBuf[3] = {0};
+  const char *s = fullHex.c_str();
   for (int i = startByte; i <= endByte; i++) {
-    String byteStr = fullHex.substring(i * 2, i * 2 + 2);
-    val = (val << 8) | strtol(byteStr.c_str(), NULL, 16);
+    byteBuf[0] = s[i * 2];
+    byteBuf[1] = s[i * 2 + 1];
+    val = (val << 8) | strtol(byteBuf, NULL, 16);
   }
 
   int bitsToExtract = endBit - startBit + 1;
@@ -61,7 +79,8 @@ bool ObdManager::manualMode = false;
 // BLE Notify callback – assembles ELM327 responses
 // ============================================================
 
-void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, bool isNotify) {
+void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData,
+                             size_t length, bool isNotify) {
   for (size_t i = 0; i < length; i++) {
     char c = (char)pData[i];
     if (c == '>') {
@@ -105,7 +124,8 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
           continue;
 
         // Skip very short noise (but NOT "OK" which AT commands return)
-        if (lineUpper.length() <= 3 && lineUpper.indexOf(' ') < 0 && lineUpper != "OK") {
+        if (lineUpper.length() <= 3 && lineUpper.indexOf(' ') < 0 &&
+            lineUpper != "OK") {
           continue;
         }
 
@@ -121,7 +141,7 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
         if (fullResponse.length() > 0)
           fullResponse += " ";
         fullResponse += lineUpper;
-        
+
         WebConsole::pushLog(lineUpper); // Send raw line to Web Console
       }
 
@@ -166,9 +186,7 @@ void ObdManager::sendCommand(const char *cmd) {
   }
 }
 
-void ObdManager::sendManualCommand(const char *cmd) {
-  sendCommand(cmd);
-}
+void ObdManager::sendManualCommand(const char *cmd) { sendCommand(cmd); }
 
 // ============================================================
 // Blocking helper: send an AT command and wait for "OK"
@@ -201,7 +219,8 @@ static bool sendATAndWait(const char *cmd, unsigned long timeoutMs = 800) {
 // Used for HVAC multi-frame queries that need longer waits.
 // ============================================================
 
-static String sendAndWaitResponse(const char *cmd, unsigned long timeoutMs = 3000) {
+static String sendAndWaitResponse(const char *cmd,
+                                  unsigned long timeoutMs = 3000) {
   lastOBDValue = "";
   ObdManager::sendCommand(cmd);
   unsigned long t0 = millis();
@@ -213,7 +232,8 @@ static String sendAndWaitResponse(const char *cmd, unsigned long timeoutMs = 300
       return resp;
     }
   }
-  Serial.printf("[OBD] Data cmd '%s' no response within %lu ms\n", cmd, timeoutMs);
+  Serial.printf("[OBD] Data cmd '%s' no response within %lu ms\n", cmd,
+                timeoutMs);
   return "";
 }
 
@@ -224,10 +244,11 @@ static String sendAndWaitResponse(const char *cmd, unsigned long timeoutMs = 300
 // frames into a contiguous hex string.
 // ============================================================
 
-static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs = 5000) {
+static String sendIsoTpRequest(const char *serviceCmd,
+                               unsigned long timeoutMs = 5000) {
   // Build the ISO-TP single frame: PCI byte + service data
   // serviceCmd is like "2143" (2 bytes) -> PCI = "02" + "2143"
-  int dataLen = strlen(serviceCmd) / 2;  // hex nibbles to bytes
+  int dataLen = strlen(serviceCmd) / 2; // hex nibbles to bytes
   char isotpCmd[32];
   snprintf(isotpCmd, sizeof(isotpCmd), "0%d%s", dataLen, serviceCmd);
 
@@ -238,22 +259,25 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
   unsigned long t0 = millis();
   while (millis() - t0 < timeoutMs) {
     delay(30);
-    if (lastOBDValue.length() > 0) break;
+    if (lastOBDValue.length() > 0)
+      break;
   }
   if (lastOBDValue.length() == 0) {
-    Serial.printf("[OBD] IsoTP '%s' no response within %lu ms\n", serviceCmd, timeoutMs);
+    Serial.printf("[OBD] IsoTP '%s' no response within %lu ms\n", serviceCmd,
+                  timeoutMs);
     return "";
   }
 
   String resp = lastOBDValue;
   lastOBDValue = "";
   resp.trim();
-  resp.replace(" ", "");  // remove any spaces
+  resp.replace(" ", ""); // remove any spaces
   resp.toUpperCase();
 
   Serial.printf("[OBD] IsoTP raw: '%s'\n", resp.c_str());
 
-  if (resp.length() < 2) return "";
+  if (resp.length() < 2)
+    return "";
 
   // Check first nibble for frame type
   char frameType = resp.charAt(0);
@@ -270,7 +294,8 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
     // Trim to actual data length
     if ((int)hexData.length() > len * 2)
       hexData = hexData.substring(0, len * 2);
-    Serial.printf("[OBD] IsoTP SINGLE: len=%d data='%s'\n", len, hexData.c_str());
+    Serial.printf("[OBD] IsoTP SINGLE: len=%d data='%s'\n", len,
+                  hexData.c_str());
     return hexData;
   }
 
@@ -280,7 +305,8 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
     // Each CAN frame is 16 hex chars (8 bytes). We must strip PCI bytes:
     //   First Frame: 4 PCI nibbles (1LLL), 12 data nibbles (6 bytes)
     //   Consecutive:  2 PCI nibbles (2X),  14 data nibbles (7 bytes)
-    if (resp.length() < 16) return "";
+    if (resp.length() < 16)
+      return "";
 
     // Parse total length from nibbles 1-3
     String lenHex = resp.substring(1, 4);
@@ -288,10 +314,11 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
 
     // First Frame data: skip 4 PCI nibbles, take 12 data nibbles (6 bytes)
     String hexData = resp.substring(4, 16);
-    Serial.printf("[OBD] IsoTP FIRST: totalLen=%d, FF data='%s'\n", totalLen, hexData.c_str());
+    Serial.printf("[OBD] IsoTP FIRST: totalLen=%d, FF data='%s'\n", totalLen,
+                  hexData.c_str());
 
     // Parse inline Consecutive Frames (each 16 hex chars)
-    int pos = 16;  // start of next CAN frame
+    int pos = 16; // start of next CAN frame
     int cfCount = 0;
     while (pos + 16 <= (int)resp.length()) {
       String frame = resp.substring(pos, pos + 16);
@@ -310,7 +337,8 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
     if ((int)hexData.length() > totalLen * 2)
       hexData = hexData.substring(0, totalLen * 2);
 
-    Serial.printf("[OBD] IsoTP assembled: %d bytes (%d CFs), '%s'\n", totalLen, cfCount, hexData.c_str());
+    Serial.printf("[OBD] IsoTP assembled: %d bytes (%d CFs), '%s'\n", totalLen,
+                  cfCount, hexData.c_str());
     return hexData;
   }
 
@@ -329,13 +357,16 @@ static bool switchToECU(const char *txId, const char *rxId) {
   char cmd[16];
 
   snprintf(cmd, sizeof(cmd), "ATSH%s", txId);
-  if (!sendATAndWait(cmd)) return false;
+  if (!sendATAndWait(cmd))
+    return false;
 
   snprintf(cmd, sizeof(cmd), "ATCRA%s", rxId);
-  if (!sendATAndWait(cmd)) return false;
+  if (!sendATAndWait(cmd))
+    return false;
 
   snprintf(cmd, sizeof(cmd), "ATFCSH%s", txId);
-  if (!sendATAndWait(cmd)) return false;
+  if (!sendATAndWait(cmd))
+    return false;
 
   return true;
 }
@@ -367,7 +398,9 @@ bool ObdManager::initOBD() {
       }
     }
     if (!isELM)
-      Serial.printf("[BLE] Nincs válasz a(z) %s parancsra, újrapróbálkozás...\n", atzCommands[cmdIdx]);
+      Serial.printf(
+          "[BLE] Nincs válasz a(z) %s parancsra, újrapróbálkozás...\n",
+          atzCommands[cmdIdx]);
   }
 
   if (!isELM) {
@@ -440,12 +473,12 @@ void ObdManager::readHvacBlocking() {
   obdCurrentECU = 1;
 
   // 2. Switch to CanZE-compatible mode for multi-frame
-  sendATAndWait("ATS0");          // No spaces (raw hex concat)
-  sendATAndWait("ATCAF0");        // CAN Auto Formatting OFF
-  sendATAndWait("ATAL");           // Allow Long messages
-  sendATAndWait("ATFCSD300000");  // FC: ContinueToSend, BS=0, STmin=0
-  sendATAndWait("ATFCSM1");       // User-defined FC mode
-  sendATAndWait("ATSTFF");        // Max ELM327 timeout
+  sendATAndWait("ATS0");         // No spaces (raw hex concat)
+  sendATAndWait("ATCAF0");       // CAN Auto Formatting OFF
+  sendATAndWait("ATAL");         // Allow Long messages
+  sendATAndWait("ATFCSD300000"); // FC: ContinueToSend, BS=0, STmin=0
+  sendATAndWait("ATFCSM1");      // User-defined FC mode
+  sendATAndWait("ATSTFF");       // Max ELM327 timeout
 
   // 3. Open vendor diagnostic session on HVAC
   String sessResp = sendIsoTpRequest("10C0", 2000);
@@ -456,12 +489,14 @@ void ObdManager::readHvacBlocking() {
   //    Bits 26-35, res 0.1, offset 400 → (raw * 0.1) - 40.0
   // =================================================================
   String resp2121 = sendIsoTpRequest("2121", 5000);
-  Serial.printf("[OBD] 2121 IsoTP (%d chars): '%s'\n", resp2121.length(), resp2121.c_str());
+  Serial.printf("[OBD] 2121 IsoTP (%d chars): '%s'\n", resp2121.length(),
+                resp2121.c_str());
   if (resp2121.indexOf("6121") >= 0) {
     int rawCabin = parseUDSBits(resp2121, "6121", 26, 35);
     if (rawCabin >= 0) {
       obdCabinTemp = (rawCabin * 0.1f) - 40.0f;
-      Serial.printf("[ZOE] Cabin Temp = %.1f C (raw=%d)\n", obdCabinTemp, rawCabin);
+      Serial.printf("[ZOE] Cabin Temp = %.1f C (raw=%d)\n", obdCabinTemp,
+                    rawCabin);
     }
   }
 
@@ -471,7 +506,8 @@ void ObdManager::readHvacBlocking() {
   //    IH_ACHighPressureSensor: bits 134-142, res 0.1
   // =================================================================
   String resp2143 = sendIsoTpRequest("2143", 5000);
-  Serial.printf("[OBD] 2143 IsoTP (%d chars): '%s'\n", resp2143.length(), resp2143.c_str());
+  Serial.printf("[OBD] 2143 IsoTP (%d chars): '%s'\n", resp2143.length(),
+                resp2143.c_str());
   if (resp2143.indexOf("6143") >= 0) {
     int rawExt = parseUDSBits(resp2143, "6143", 110, 117);
     if (rawExt >= 0) {
@@ -481,7 +517,8 @@ void ObdManager::readHvacBlocking() {
     int rawPress = parseUDSBits(resp2143, "6143", 134, 142);
     if (rawPress >= 0) {
       obdACPressure = rawPress * 0.1f;
-      Serial.printf("[ZOE] AC Pressure = %.1f bar (raw=%d)\n", obdACPressure, rawPress);
+      Serial.printf("[ZOE] AC Pressure = %.1f bar (raw=%d)\n", obdACPressure,
+                    rawPress);
     }
   }
 
@@ -490,7 +527,8 @@ void ObdManager::readHvacBlocking() {
   //    IH_ClimCompRPMStatus: bits 107-116, res 10
   // =================================================================
   String resp2144 = sendIsoTpRequest("2144", 5000);
-  Serial.printf("[OBD] 2144 IsoTP (%d chars): '%s'\n", resp2144.length(), resp2144.c_str());
+  Serial.printf("[OBD] 2144 IsoTP (%d chars): '%s'\n", resp2144.length(),
+                resp2144.c_str());
   if (resp2144.indexOf("6144") >= 0) {
     int raw = parseUDSBits(resp2144, "6144", 107, 116);
     if (raw >= 0) {
@@ -500,9 +538,9 @@ void ObdManager::readHvacBlocking() {
   }
 
   // 7. Restore normal ELM327 mode for EVC queries
-  sendATAndWait("ATS1");     // Spaces back on
-  sendATAndWait("ATCAF1");   // CAN Auto Formatting ON
-  sendATAndWait("ATST32");   // Normal timeout
+  sendATAndWait("ATS1");   // Spaces back on
+  sendATAndWait("ATCAF1"); // CAN Auto Formatting ON
+  sendATAndWait("ATST32"); // Normal timeout
 
   // 8. Switch back to EVC
   switchToECU("7E4", "7EC");
@@ -527,8 +565,9 @@ void ObdManager::readHvacBlocking() {
 static const int POLL_STEPS = 5;
 
 void ObdManager::processPolling() {
-  if (manualMode) return; // SKIP automatic polling if user is debugging via Web Console
-  
+  if (manualMode)
+    return; // SKIP automatic polling if user is debugging via Web Console
+
   bool shouldSendNext = false;
   unsigned long now = millis();
 
@@ -608,7 +647,8 @@ void ObdManager::processPolling() {
       else if (resp.endsWith("V")) {
         obd12V = resp;
         Serial.printf("[ZOE] 12V = %s\n", obd12V.c_str());
-      } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0 || resp.indexOf("7F") >= 0) {
+      } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0 ||
+                 resp.indexOf("7F") >= 0) {
         Serial.printf("[ZOE] ECU error/no data: %s\n", resp.c_str());
       }
       // "OK" from AT commands silently ignored
@@ -632,17 +672,25 @@ void ObdManager::processPolling() {
 
     if (obdZoeMode) {
       switch (obdPollIndex) {
-        // EVC (Service 22) – async
-        case 0: sendCommand("222002"); break;   // SOC
-        case 1: sendCommand("223206"); break;   // SOH
-        case 2: sendCommand("222001"); break;   // Battery Rack Temp
-        // HVAC – fully blocking, no collision possible
-        case 3:
-          readHvacBlocking();
-          obdResponsePending = false; // Already processed
-          break;
-        // General
-        case 4: sendCommand("ATRV"); break;     // 12V Battery
+      // EVC (Service 22) – async
+      case 0:
+        sendCommand("222002");
+        break; // SOC
+      case 1:
+        sendCommand("223206");
+        break; // SOH
+      case 2:
+        sendCommand("222001");
+        break; // Battery Rack Temp
+      // HVAC – fully blocking, no collision possible
+      case 3:
+        readHvacBlocking();
+        obdResponsePending = false; // Already processed
+        break;
+      // General
+      case 4:
+        sendCommand("ATRV");
+        break; // 12V Battery
       }
       obdPollIndex = (obdPollIndex + 1) % POLL_STEPS;
     } else {
