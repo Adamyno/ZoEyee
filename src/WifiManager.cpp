@@ -280,18 +280,16 @@ void WifiManager::connect() {
     gfx->setCursor(90, 140);
     gfx->print("Connected!");
     DisplayManager::drawTopBar(); // Update WiFi icon
-    delay(1500);
-    currentState = STATE_WIFI_STATUS;
-    showStatus();
+    wifiTransitionTime = millis() + 1500;
+    wifiNextState = STATE_WIFI_STATUS;
   } else {
     gfx->fillRect(0, 120, 320, 30, BLACK);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(RED);
     gfx->setCursor(70, 140);
     gfx->print("Connection failed!");
-    delay(2000);
-    currentState = STATE_WIFI_MENU;
-    showMenu();
+    wifiTransitionTime = millis() + 2000;
+    wifiNextState = STATE_WIFI_MENU;
   }
 }
 
