@@ -68,10 +68,13 @@ void setup(void) {
   gfx->setCursor(115, 140);
   gfx->print("ZoEyee");
 
-  // Verziószám
+  // Verziószám (automatikusan középre igazítva)
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(0x7BEF); // Világosszürke
-  gfx->setCursor(105, 162);
+  int16_t vx1, vy1;
+  uint16_t vw, vh;
+  gfx->getTextBounds(SW_VERSION, 0, 0, &vx1, &vy1, &vw, &vh);
+  gfx->setCursor((320 - vw) / 2, 162);
   gfx->print(SW_VERSION);
 
   delay(5000);

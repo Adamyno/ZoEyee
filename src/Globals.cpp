@@ -2,6 +2,16 @@
 #include "Globals.h"
 
 State currentState = STATE_HOME;
+
+// Default dashboard configuration (Page 0: SOH, SOC, IN, BatTemp, RPM, Bar)
+DashSlot dashPages[MAX_PAGES][6] = {
+  {{0}, {1}, {2}, {3}, {4}, {5}}, // Page 0
+  {{1}, {1}, {1}, {1}, {1}, {1}}, // Default for other pages
+  {{1}, {1}, {1}, {1}, {1}, {1}},
+  {{1}, {1}, {1}, {1}, {1}, {1}}
+};
+int currentPage = 0;
+int currentSlotIndex = 0;
 int menuIndex = 0;
 const int menuCount = 4;
 const char *menuItems[] = {"INFO", "WIFI", "BT SCAN", "BRIGHTNESS"};

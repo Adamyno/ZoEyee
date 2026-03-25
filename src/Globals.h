@@ -20,8 +20,19 @@ enum State {
   STATE_BRIGHTNESS,
   STATE_BT_LIST,
   STATE_BT_DEVICE_INFO,
-  STATE_BT_STATUS
+  STATE_BT_STATUS,
+  STATE_SLOT_PICKER   // New: Parameter selection overlay
 };
+
+// Dashboard Slot configuration
+struct DashSlot {
+  int paramIndex;     // Index into DisplayManager's parameter register
+};
+
+#define MAX_PAGES 4
+extern DashSlot dashPages[MAX_PAGES][6];
+extern int currentPage;
+extern int currentSlotIndex; // For tracking which slot is being edited
 
 extern State currentState;
 extern int menuIndex;
