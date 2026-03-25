@@ -30,7 +30,6 @@ extern const char *menuItems[];
 
 // Forward declarations for functions still in main.cpp
 void disconnectOBD();
-void showWifiStatus();
 
 extern int currentBrightness; // 0-255
 
