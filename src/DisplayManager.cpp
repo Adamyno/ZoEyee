@@ -260,39 +260,43 @@ static void drawIconHeart(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   // Smooth the gap between circles and triangle
   g->fillRect(cx - 5, cy - 4, 10, 4, color);
 }
-
-static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Bold lightning bolt
-  g->fillTriangle(cx - 2, cy - 12, cx + 7, cy - 12, cx - 1, cy, color);
-  g->fillTriangle(cx + 1, cy - 2, cx - 7, cy + 12, cx + 2, cy, color);
-  g->fillRect(cx - 2, cy - 3, 5, 5, color);
+static void drawIconBatterySOC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Large white battery outline
+  g->drawRoundRect(cx - 11, cy - 13, 22, 26, 3, WHITE);
+  g->drawRoundRect(cx - 10, cy - 12, 20, 24, 2, WHITE);
+  g->fillRect(cx - 4, cy - 16, 8, 4, WHITE);  // battery terminal cap
+  // Yellow lightning bolt inside battery
+  uint16_t bolt = 0xFFE0;
+  g->fillTriangle(cx + 2, cy - 9, cx - 3, cy - 9, cx - 1, cy + 1, bolt);
+  g->fillTriangle(cx - 2, cy + 1, cx + 3, cy + 1, cx + 1, cy + 9, bolt);
+  g->fillRect(cx - 2, cy - 1, 4, 3, bolt);  // connect the two triangles
 }
 
-static void drawIconThermometer(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Bulb at bottom + stem
-  g->fillCircle(cx, cy + 8, 6, color);
-  g->fillRoundRect(cx - 3, cy - 12, 6, 20, 3, color);
-  // Inner mercury (darker shade)
-  uint16_t inner = 0xFB00; // darker orange/red
-  g->fillCircle(cx, cy + 8, 3, inner);
-  g->fillRect(cx - 1, cy - 6, 2, 12, inner);
-  // Tick marks
-  g->drawLine(cx + 4, cy - 8, cx + 7, cy - 8, 0x7BEF);
-  g->drawLine(cx + 4, cy - 4, cx + 6, cy - 4, 0x7BEF);
-  g->drawLine(cx + 4, cy,     cx + 7, cy,     0x7BEF);
+static void drawIconThermometerBig(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Larger thermometer: bigger bulb, taller stem
+  g->fillCircle(cx, cy + 10, 8, color);       // big outer bulb
+  g->fillRoundRect(cx - 4, cy - 14, 8, 24, 4, color); // wide stem
+  // Inner mercury
+  uint16_t inner = 0x8000;  // dark red
+  g->fillCircle(cx, cy + 10, 5, inner);
+  g->fillRect(cx - 2, cy - 8, 4, 16, inner);
+  // Tick marks (right side)
+  g->drawLine(cx + 5, cy - 10, cx + 9, cy - 10, 0x7BEF);
+  g->drawLine(cx + 5, cy - 5,  cx + 8, cy - 5,  0x7BEF);
+  g->drawLine(cx + 5, cy,      cx + 9, cy,      0x7BEF);
+  g->drawLine(cx + 5, cy + 5,  cx + 8, cy + 5,  0x7BEF);
 }
 
-static void drawIconBatteryTemp(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Battery outline
-  g->drawRoundRect(cx - 12, cy - 10, 16, 22, 2, color);
-  g->fillRect(cx - 8, cy - 12, 8, 3, color);
-  // Battery level bars
-  g->fillRect(cx - 10, cy + 4, 12, 3, color);
-  g->fillRect(cx - 10, cy - 1, 12, 3, color);
-  g->fillRect(cx - 10, cy - 6, 12, 3, color);
-  // Small thermometer on the right
-  g->fillCircle(cx + 10, cy + 6, 3, 0xF800); // red bulb
-  g->fillRect(cx + 9, cy - 6, 2, 12, 0xF800);
+static void drawIconBatteryThermo(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Large white battery outline (same as SOC)
+  g->drawRoundRect(cx - 11, cy - 13, 22, 26, 3, WHITE);
+  g->drawRoundRect(cx - 10, cy - 12, 20, 24, 2, WHITE);
+  g->fillRect(cx - 4, cy - 16, 8, 4, WHITE);  // terminal cap
+  // Red thermometer inside battery
+  uint16_t red = 0xF800;
+  g->fillCircle(cx, cy + 7, 4, red);    // bulb
+  g->fillRect(cx - 1, cy - 7, 3, 14, red);   // stem
+  g->fillCircle(cx, cy + 7, 2, 0x8000); // inner bulb
 }
 
 static void drawIconSnowflake(Arduino_GFX *g, int cx, int cy, uint16_t color) {
@@ -352,12 +356,13 @@ static void drawIconGauge(Arduino_GFX *g, int cx, int cy, uint16_t color) {
 // Future: user can swap entries per slot via long-press picker.
 
 static DashParam dashParams[] = {
-  {"SOH",   "%",            -1,  true,  0, 0xF800, drawIconHeart},        // Red heart
-  {"SOC",   "%",            -1,  false, 0, 0x07E0, drawIconLightning},    // Green bolt
-  {"Cabin", "\xB0" "C",    -99, false, 0, 0xFD20, drawIconThermometer},  // Orange thermo
-  {"Bat",   "\xB0" "C",    -99, false, 0, 0x07FF, drawIconBatteryTemp},  // Cyan bat+thermo
-  {"RPM",   "RPM",          -1, true,  0, 0x419F, drawIconSnowflake},    // Blue snowflake
-  {"Press", "Bar",           -1, false, 1, 0xFFE0, drawIconGauge},        // Yellow gauge
+  // label   unit   sentinel  isInt  dec  color   drawIcon
+  {"SOH",   "%",    -1,  true,  0, 0xF800, drawIconHeart},         // Red heart
+  {"",      "%",    -1,  false, 0, 0xFFFF, drawIconBatterySOC},    // White bat + yellow bolt (no label)
+  {"Cabin", "\xB0""C", -99, false, 0, 0xFD20, drawIconThermometerBig}, // Orange thermo, vertical label
+  {"",      "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo}, // White bat + red thermo (no label)
+  {"RPM",   "RPM",  -1,  true,  0, 0xB7FF, drawIconSnowflake},    // Light-blue snowflake
+  {"BAR",   "Bar",  -1,  false, 1, 0xB7FF, drawIconSnowflake},    // Same snowflake, BAR label
 };
 
 // Helper: get current OBD value for slot index
@@ -439,16 +444,33 @@ void DisplayManager::showHome() {
       p.drawIcon(gfx, cx, cy, p.iconColor);
     }
 
-    // Draw label below icon
-    gfx->setFont(&FreeSans9pt7b);
-    gfx->setTextColor(p.iconColor);
-    gfx->setTextSize(1);
-    // Center the label text under the icon
-    int16_t lx, ly;
-    uint16_t lw, lh;
-    gfx->getTextBounds(p.label, 0, 0, &lx, &ly, &lw, &lh);
-    gfx->setCursor(cx - lw / 2, y0 + 42);
-    gfx->print(p.label);
+    // Draw label: skip if empty, draw vertically on left edge for Cabin
+    if (strlen(p.label) > 0) {
+      gfx->setFont(&FreeSans9pt7b);
+      gfx->setTextColor(p.iconColor);
+      gfx->setTextSize(1);
+
+      if (i == 2) {
+        // Cabin: draw label vertically on the left edge of the cell
+        // Each character drawn top-to-bottom, rotated 90° using setRotation
+        // Since GFX doesn't support per-text rotation easily, draw chars
+        // top-to-bottom at x=x0+6, stepping ~11px per char
+        int charY = y0 + 8;
+        for (const char *ch = p.label; *ch != '\0'; ch++) {
+          char buf[2] = {*ch, '\0'};
+          gfx->setCursor(x0 + 2, charY);
+          gfx->print(buf);
+          charY += 12;
+        }
+      } else {
+        // Center label below the icon
+        int16_t lx, ly;
+        uint16_t lw, lh;
+        gfx->getTextBounds(p.label, 0, 0, &lx, &ly, &lw, &lh);
+        gfx->setCursor(cx - lw / 2, y0 + 50);
+        gfx->print(p.label);
+      }
+    }
 
     // Draw value + unit
     float val = getSlotValue(i);
