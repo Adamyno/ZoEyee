@@ -8,6 +8,15 @@ public:
     static void init();
     static bool read(int &x, int &y);
     static void processGestures();
+private:
+    static void handleHomeTouch(int deltaX, int deltaY, unsigned long tapDuration);
+    static void handleMenuTouch();
+    static void handleBtListTouch();
+    static void handleBtStatusTouch();
+    static void handleWifiMenuTouch();
+    static void handleWifiClientMenuTouch();
+    static void handleWifiListTouch();
+    static void handleWifiKeyboardTouch();
 };
 
 #endif
