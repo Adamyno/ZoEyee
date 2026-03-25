@@ -37,3 +37,7 @@
 // System limits
 #define MAX_BLE_DEVICES 30
 #define MAX_WIFI_NETWORKS 20
+
+// WiFi AP credentials
+#define WIFI_AP_SSID "ZoEyee-Config"
+#define WIFI_AP_PASS "ZoEyee@123"

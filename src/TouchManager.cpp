@@ -212,7 +212,7 @@ void TouchManager::processGestures() {
               wifiAPActive = !wifiAPActive;
               if (wifiAPActive) {
                 WiFi.mode(WIFI_AP);
-                WiFi.softAP("ZoEyee-Config");
+                WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
               } else {
                 WiFi.softAPdisconnect(true);
                 WiFi.mode(WIFI_OFF);
