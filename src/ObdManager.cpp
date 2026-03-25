@@ -100,8 +100,8 @@ void ObdManager::onBLENotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, 
             lineUpper.length() <= 6)
           continue;
 
-        // Skip very short noise
-        if (lineUpper.length() <= 3 && lineUpper.indexOf(' ') < 0) {
+        // Skip very short noise (but NOT "OK" which AT commands return)
+        if (lineUpper.length() <= 3 && lineUpper.indexOf(' ') < 0 && lineUpper != "OK") {
           continue;
         }
 
@@ -274,8 +274,16 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
     // First frame has 6 data bytes, consecutive frames have 7 each
     int remaining = totalLen - 6;
     int framesToReceive = (remaining + 6) / 7;  // ceiling
+    Serial.printf("[OBD] IsoTP: expecting %d consecutive frames\n", framesToReceive);
 
-    // Wait for consecutive frames (they come as separate lines in lastOBDValue)
+    // MANUALLY send Flow Control frame!
+    // The ELM327 BLE clone sends '>' after First Frame without auto-FC.
+    // We must send FC ourselves: 30 00 00 = ContinueToSend, BS=0, STmin=0
+    lastOBDValue = "";
+    ObdManager::sendCommand("300000");
+    Serial.println("[OBD] IsoTP: sent manual FC (300000)");
+
+    // Wait for consecutive frames
     int nextSeq = 1;
     unsigned long t1 = millis();
     while (framesToReceive > 0 && (millis() - t1 < timeoutMs)) {
@@ -287,13 +295,11 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
         cf.replace(" ", "");
         cf.toUpperCase();
 
-        Serial.printf("[OBD] IsoTP NEXT: '%s'\n", cf.c_str());
+        Serial.printf("[OBD] IsoTP CF data: '%s'\n", cf.c_str());
 
-        // May contain multiple lines separated by \r
-        // Process each line
+        // Process each line (may contain multiple \r-separated frames)
         int startIdx = 0;
         while (startIdx < (int)cf.length()) {
-          // Find next line boundary (\r or end)
           int endIdx = cf.indexOf('\r', startIdx);
           if (endIdx < 0) endIdx = cf.length();
           String line = cf.substring(startIdx, endIdx);
@@ -303,11 +309,11 @@ static String sendIsoTpRequest(const char *serviceCmd, unsigned long timeoutMs =
           if (line.length() < 2) continue;
           // Check for consecutive frame: 2X...
           if (line.charAt(0) == '2') {
-            // Sequence number is second nibble
-            String frameData = line.substring(2);  // skip 2X
+            String frameData = line.substring(2);  // skip 2X PCI byte
             hexData += frameData;
             framesToReceive--;
             nextSeq = (nextSeq + 1) & 0x0F;
+            Serial.printf("[OBD] IsoTP CF#%d: '%s' (%d remaining)\n", nextSeq-1, frameData.c_str(), framesToReceive);
           }
         }
       }
