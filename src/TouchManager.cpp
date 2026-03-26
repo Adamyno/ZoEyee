@@ -244,8 +244,14 @@ void TouchManager::processGestures() {
                 wifiAPActive = false;
               }
               WiFi.mode(WIFI_STA);
+              WiFi.disconnect();
+              delay(100);
               int n = WiFi.scanNetworks();
-              wifiCount = min(n, MAX_WIFI_NETWORKS);
+              if (n < 0) {
+                wifiCount = 0;
+              } else {
+                wifiCount = min(n, MAX_WIFI_NETWORKS);
+              }
               for (int i = 0; i < wifiCount; i++) {
                 wifiNetworks[i].ssid = WiFi.SSID(i);
                 wifiNetworks[i].rssi = WiFi.RSSI(i);
