@@ -17,6 +17,15 @@ public:
     static constexpr int KB_BTN_OK_X = 250;
     static constexpr int KB_BTN_OK_W = 65;
 
+    static constexpr int KB_BAR_X = 0;
+    static constexpr int KB_BAR_Y = 0;
+    static constexpr int KB_BAR_W = 320;
+    static constexpr int KB_BAR_H = 24;
+    static constexpr uint16_t KB_BAR_COLOR = 0x18E3;
+    static constexpr int KB_PW_TEXT_X = 5;
+    static constexpr int KB_PW_TEXT_Y = 17;
+    static constexpr int KB_PW_MAX_LEN = 28;
+
     static void showMenu();
     static void showClientMenu();
     static void showList(bool fullRedraw = true);
