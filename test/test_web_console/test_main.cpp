@@ -71,11 +71,37 @@ void test_exact_limit() {
     std::cout << "test_exact_limit passed" << std::endl;
 }
 
+void test_empty_push() {
+    WebConsole::clearLogBuffer();
+    WebConsole::pushLog("");
+    assert(WebConsole::getLogBuffer() == "\n");
+    std::cout << "test_empty_push passed" << std::endl;
+}
+
+void test_huge_push() {
+    WebConsole::clearLogBuffer();
+    // What if a single push is > 4096 chars?
+    std::string hugeContent(5000, 'E');
+    WebConsole::pushLog(hugeContent.c_str());
+
+    // The length will be 5001. 5001 > 4096.
+    // Result length should be 2048.
+    assert(WebConsole::getLogBuffer().length() == 2048);
+
+    // Verify it contains the end of the content
+    String buffer = WebConsole::getLogBuffer();
+    assert(buffer.substring(buffer.length() - 5) == "EEEE\n");
+
+    std::cout << "test_huge_push passed" << std::endl;
+}
+
 int main() {
     test_basic_push();
     test_multiple_push();
     test_buffer_limit();
     test_exact_limit();
+    test_empty_push();
+    test_huge_push();
 
     std::cout << "All tests passed!" << std::endl;
     return 0;
