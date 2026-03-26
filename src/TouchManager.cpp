@@ -78,7 +78,15 @@ void TouchManager::processGestures() {
       unsigned long tapDuration = millis() - touchStartTime;
 
       if (currentState == STATE_HOME) {
-        handleHomeTouch(deltaX, deltaY, tapDuration);
+        if (abs(deltaX) < 30 && abs(deltaY) < 30 && tapDuration < 500) {
+          if (millis() - lastTapTime < 500) {
+            currentState = STATE_MENU;
+            DisplayManager::drawMenu();
+            lastTapTime = 0;
+          } else {
+            lastTapTime = millis();
+          }
+        }
         touching = false;
         return;
       }
@@ -151,247 +159,220 @@ void TouchManager::processGestures() {
               currentState = STATE_MENU;
               DisplayManager::drawMenu();
             }
-          } else {
-            switch (currentState) {
-              case STATE_MENU: handleMenuTouch(); break;
-              case STATE_BT_LIST: handleBtListTouch(); break;
-              case STATE_BT_STATUS: handleBtStatusTouch(); break;
-              case STATE_WIFI_MENU: handleWifiMenuTouch(); break;
-              case STATE_WIFI_CLIENT_MENU: handleWifiClientMenuTouch(); break;
-              case STATE_WIFI_LIST: handleWifiListTouch(); break;
-              case STATE_WIFI_KEYBOARD: handleWifiKeyboardTouch(); break;
-              default:
-                currentState = STATE_MENU;
-                DisplayManager::drawMenu();
-                break;
+          } else if (currentState == STATE_MENU) {
+            if (startY < 110) {
+              if (menuIndex == 0) {
+                currentState = STATE_INFO;
+                DisplayManager::showInfo();
+              } else if (menuIndex == 1) {
+                currentState = STATE_WIFI_MENU;
+                WifiManager::showMenu();
+              } else if (menuIndex == 2) {
+                if (isBluetoothConnected) {
+                  currentState = STATE_BT_STATUS;
+                  BluetoothManager::showStatus();
+                } else {
+                  currentState = STATE_BT_SCAN;
+                  BluetoothManager::runBLEScan();
+                }
+              } else if (menuIndex == 3) {
+                currentState = STATE_BRIGHTNESS;
+                DisplayManager::showBrightness();
+              }
             }
+          } else if (currentState == STATE_BT_LIST) {
+            if (btTotalDevices > 0) {
+              if (startX >= 20 && startX <= 150 && startY >= 110 &&
+                  startY <= 145) {
+                if (!isBluetoothConnected && !bleConnecting)
+                  BluetoothManager::connect(btSelectedDeviceIndex);
+                else if (isBluetoothConnected)
+                  BluetoothManager::disconnect();
+                BluetoothManager::showList(true);
+              } else if (startX >= 170 && startX <= 300 && startY >= 110 &&
+                         startY <= 145) {
+                currentState = STATE_BT_DEVICE_INFO;
+                BluetoothManager::showDeviceInfo();
+              }
+            }
+          } else if (currentState == STATE_BT_STATUS) {
+            if (startY >= 146 && startY <= 174) {
+              preferences.remove("bt_mac");
+              preferences.remove("bt_name");
+              preferences.remove("bt_type");
+              btTargetMAC = "";
+              btTargetName = "";
+              BluetoothManager::disconnect();
+              currentState = STATE_MENU;
+              DisplayManager::drawMenu();
+            }
+          } else if (currentState == STATE_WIFI_MENU) {
+            // AP Mode button
+            if (startY >= 50 && startY <= 78) {
+              wifiAPActive = !wifiAPActive;
+              if (wifiAPActive) {
+                WiFi.mode(WIFI_AP);
+                WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+              } else {
+                WiFi.softAPdisconnect(true);
+                WiFi.mode(WIFI_OFF);
+              }
+              WifiManager::showMenu();
+            }
+            // Client Menu button
+            else if (startY >= 88 && startY <= 116) {
+              currentState = STATE_WIFI_CLIENT_MENU;
+              WifiManager::showClientMenu();
+            }
+            // Status button
+            else if (startY >= 126 && startY <= 154) {
+              currentState = STATE_WIFI_STATUS;
+              WifiManager::showStatus();
+            }
+          } else if (currentState == STATE_WIFI_CLIENT_MENU) {
+            // Scan Networks button
+            if (startY >= 50 && startY <= 78) {
+              gfx->fillScreen(BLACK);
+              DisplayManager::drawTopBar();
+              gfx->setFont(&FreeSans12pt7b);
+              gfx->setTextColor(YELLOW);
+              gfx->setTextSize(1);
+              gfx->setCursor(80, 90);
+              gfx->print("Scanning...");
+              if (wifiAPActive) {
+                WiFi.softAPdisconnect(true);
+                wifiAPActive = false;
+              }
+              WiFi.mode(WIFI_STA);
+              int n = WiFi.scanNetworks();
+              wifiCount = min(n, MAX_WIFI_NETWORKS);
+              for (int i = 0; i < wifiCount; i++) {
+                wifiNetworks[i].ssid = WiFi.SSID(i);
+                wifiNetworks[i].rssi = WiFi.RSSI(i);
+                wifiNetworks[i].encrypted =
+                    (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+              }
+              wifiSelectedIndex = 0;
+              currentState = STATE_WIFI_LIST;
+              WifiManager::showList();
+            }
+            // Save & Auto-Conn checkbox
+            else if (startX >= 30 && startX <= 200 && startY >= 88 &&
+                     startY <= 116) {
+              wifiAutoSave = !wifiAutoSave;
+              preferences.putBool("auto", wifiAutoSave);
+
+              // If checking it ON and connected, save current
+              if (wifiAutoSave && WiFi.status() == WL_CONNECTED) {
+                preferences.putString("ssid", WiFi.SSID());
+                preferences.putString("pw",
+                                      wifiPassword); // stores last used pass
+              }
+              WifiManager::showClientMenu();
+            }
+            // Delete button (X: 230 to 290)
+            else if (startX >= 230 && startX <= 290 && startY >= 88 &&
+                     startY <= 116) {
+              if (preferences.getString("ssid", "").length() > 0) {
+                preferences.remove("ssid");
+                preferences.remove("pw");
+                preferences.putBool("auto", false);
+                wifiAutoSave = false;
+                WifiManager::showClientMenu();
+              }
+            }
+            // Disconnect button
+            else if (startY >= 126 && startY <= 154) {
+              if (WiFi.status() == WL_CONNECTED) {
+                WiFi.disconnect();
+                WifiManager::showClientMenu();
+              }
+            }
+          } else if (currentState == STATE_WIFI_LIST) {
+            // Connect button (moved down to Y=130)
+            if (startX >= 90 && startX <= 230 && startY >= 130 &&
+                startY <= 160 && wifiCount > 0) {
+              wifiTargetSSID = wifiNetworks[wifiSelectedIndex].ssid;
+              if (wifiNetworks[wifiSelectedIndex].encrypted) {
+                wifiPassword = "";
+                kbShift = false;
+                kbNumbers = false;
+                currentState = STATE_WIFI_KEYBOARD;
+                WifiManager::showKeyboard();
+              } else {
+                wifiPassword = "";
+                WifiManager::connect();
+              }
+            }
+          } else if (currentState == STATE_WIFI_KEYBOARD) {
+            // Keyboard touch detection
+            const char **rows =
+                kbNumbers ? kbRowsNum : (kbShift ? kbRowsUpper : kbRowsLower);
+            int keyW = 28, keyH = 28;
+            int startYkb = 28;
+            bool handled = false;
+
+            for (int r = 0; r < 3 && !handled; r++) {
+              int rowLen = strlen(rows[r]);
+              int rowStartX = (320 - rowLen * keyW) / 2;
+              for (int c = 0; c < rowLen; c++) {
+                int kx = rowStartX + c * keyW;
+                int ky = startYkb + r * (keyH + 4);
+                if (startX >= kx && startX <= kx + keyW && startY >= ky &&
+                    startY <= ky + keyH) {
+                  wifiPassword += rows[r][c];
+                  if (kbShift)
+                    kbShift = false; // Auto-off shift after one char
+                  WifiManager::showKeyboard();
+                  handled = true;
+                  break;
+                }
+              }
+            }
+
+            if (!handled) {
+              int btnY = startYkb + 3 * (keyH + 4);
+              if (startY >= btnY && startY <= btnY + keyH) {
+                if (startX >= 5 && startX <= 60) {
+                  // Shift / 123 toggle: lowercase→Shift, Shift→123,
+                  // 123→lowercase
+                  if (kbNumbers) {
+                    kbNumbers = false;
+                    kbShift = false;
+                  } else if (kbShift) {
+                    kbShift = false;
+                    kbNumbers = true;
+                  } else {
+                    kbShift = true;
+                  }
+                  WifiManager::showKeyboard();
+                } else if (startX >= 65 && startX <= 185) {
+                  // Space
+                  wifiPassword += ' ';
+                  WifiManager::showKeyboard();
+                } else if (startX >= 190 && startX <= 245) {
+                  // Backspace or BACK
+                  if (wifiPassword.length() > 0) {
+                    wifiPassword.remove(wifiPassword.length() - 1);
+                    WifiManager::showKeyboard();
+                  } else {
+                    // BACK: return to WiFi list
+                    currentState = STATE_WIFI_LIST;
+                    WifiManager::showList();
+                  }
+                } else if (startX >= 250 && startX <= 315) {
+                  // OK → connect
+                  WifiManager::connect();
+                }
+              }
+            }
+          } else {
+            currentState = STATE_MENU;
+            DisplayManager::drawMenu();
           }
         }
       }
       touching = false;
-    }
-  }
-}
-
-void TouchManager::handleHomeTouch(int deltaX, int deltaY, unsigned long tapDuration) {
-  if (abs(deltaX) < 30 && abs(deltaY) < 30 && tapDuration < 500) {
-    if (millis() - lastTapTime < 500) {
-      currentState = STATE_MENU;
-      DisplayManager::drawMenu();
-      lastTapTime = 0;
-    } else {
-      lastTapTime = millis();
-    }
-  }
-}
-
-void TouchManager::handleMenuTouch() {
-  if (startY < 110) {
-    if (menuIndex == 0) {
-      currentState = STATE_INFO;
-      DisplayManager::showInfo();
-    } else if (menuIndex == 1) {
-      currentState = STATE_WIFI_MENU;
-      WifiManager::showMenu();
-    } else if (menuIndex == 2) {
-      if (isBluetoothConnected) {
-        currentState = STATE_BT_STATUS;
-        BluetoothManager::showStatus();
-      } else {
-        currentState = STATE_BT_SCAN;
-        BluetoothManager::runBLEScan();
-      }
-    } else if (menuIndex == 3) {
-      currentState = STATE_BRIGHTNESS;
-      DisplayManager::showBrightness();
-    }
-  }
-}
-
-void TouchManager::handleBtListTouch() {
-  if (btTotalDevices > 0) {
-    if (startX >= 20 && startX <= 150 && startY >= 110 && startY <= 145) {
-      if (!isBluetoothConnected && !bleConnecting)
-        BluetoothManager::connect(btSelectedDeviceIndex);
-      else if (isBluetoothConnected)
-        BluetoothManager::disconnect();
-      BluetoothManager::showList(true);
-    } else if (startX >= 170 && startX <= 300 && startY >= 110 && startY <= 145) {
-      currentState = STATE_BT_DEVICE_INFO;
-      BluetoothManager::showDeviceInfo();
-    }
-  }
-}
-
-void TouchManager::handleBtStatusTouch() {
-  if (startY >= 146 && startY <= 174) {
-    preferences.remove("bt_mac");
-    preferences.remove("bt_name");
-    preferences.remove("bt_type");
-    btTargetMAC = "";
-    btTargetName = "";
-    BluetoothManager::disconnect();
-    currentState = STATE_MENU;
-    DisplayManager::drawMenu();
-  }
-}
-
-void TouchManager::handleWifiMenuTouch() {
-  // AP Mode button
-  if (startY >= 50 && startY <= 78) {
-    wifiAPActive = !wifiAPActive;
-    if (wifiAPActive) {
-      WiFi.mode(WIFI_AP);
-      WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
-    } else {
-      WiFi.softAPdisconnect(true);
-      WiFi.mode(WIFI_OFF);
-    }
-    WifiManager::showMenu();
-  }
-  // Client Menu button
-  else if (startY >= 88 && startY <= 116) {
-    currentState = STATE_WIFI_CLIENT_MENU;
-    WifiManager::showClientMenu();
-  }
-  // Status button
-  else if (startY >= 126 && startY <= 154) {
-    currentState = STATE_WIFI_STATUS;
-    WifiManager::showStatus();
-  }
-}
-
-void TouchManager::handleWifiClientMenuTouch() {
-  // Scan Networks button
-  if (startY >= 50 && startY <= 78) {
-    gfx->fillScreen(BLACK);
-    DisplayManager::drawTopBar();
-    gfx->setFont(&FreeSans12pt7b);
-    gfx->setTextColor(YELLOW);
-    gfx->setTextSize(1);
-    gfx->setCursor(80, 90);
-    gfx->print("Scanning...");
-    if (wifiAPActive) {
-      WiFi.softAPdisconnect(true);
-      wifiAPActive = false;
-    }
-    WiFi.mode(WIFI_STA);
-    int n = WiFi.scanNetworks();
-    wifiCount = min(n, MAX_WIFI_NETWORKS);
-    for (int i = 0; i < wifiCount; i++) {
-      wifiNetworks[i].ssid = WiFi.SSID(i);
-      wifiNetworks[i].rssi = WiFi.RSSI(i);
-      wifiNetworks[i].encrypted =
-          (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
-    }
-    wifiSelectedIndex = 0;
-    currentState = STATE_WIFI_LIST;
-    WifiManager::showList();
-  }
-  // Save & Auto-Conn checkbox
-  else if (startX >= 30 && startX <= 200 && startY >= 88 && startY <= 116) {
-    wifiAutoSave = !wifiAutoSave;
-    preferences.putBool("auto", wifiAutoSave);
-
-    // If checking it ON and connected, save current
-    if (wifiAutoSave && WiFi.status() == WL_CONNECTED) {
-      preferences.putString("ssid", WiFi.SSID());
-      preferences.putString("pw", wifiPassword); // stores last used pass
-    }
-    WifiManager::showClientMenu();
-  }
-  // Delete button (X: 230 to 290)
-  else if (startX >= 230 && startX <= 290 && startY >= 88 && startY <= 116) {
-    if (preferences.getString("ssid", "").length() > 0) {
-      preferences.remove("ssid");
-      preferences.remove("pw");
-      preferences.putBool("auto", false);
-      wifiAutoSave = false;
-      WifiManager::showClientMenu();
-    }
-  }
-  // Disconnect button
-  else if (startY >= 126 && startY <= 154) {
-    if (WiFi.status() == WL_CONNECTED) {
-      WiFi.disconnect();
-      WifiManager::showClientMenu();
-    }
-  }
-}
-
-void TouchManager::handleWifiListTouch() {
-  // Connect button (moved down to Y=130)
-  if (startX >= 90 && startX <= 230 && startY >= 130 && startY <= 160 && wifiCount > 0) {
-    wifiTargetSSID = wifiNetworks[wifiSelectedIndex].ssid;
-    if (wifiNetworks[wifiSelectedIndex].encrypted) {
-      wifiPassword = "";
-      kbShift = false;
-      kbNumbers = false;
-      currentState = STATE_WIFI_KEYBOARD;
-      WifiManager::showKeyboard();
-    } else {
-      wifiPassword = "";
-      WifiManager::connect();
-    }
-  }
-}
-
-void TouchManager::handleWifiKeyboardTouch() {
-  const char **rows = kbNumbers ? kbRowsNum : (kbShift ? kbRowsUpper : kbRowsLower);
-  bool handled = false;
-
-  for (int r = 0; r < 3 && !handled; r++) {
-    int rowLen = strlen(rows[r]);
-    int rowStartX = (320 - rowLen * WifiManager::KB_KEY_W) / 2;
-    for (int c = 0; c < rowLen; c++) {
-      int kx = rowStartX + c * WifiManager::KB_KEY_W;
-      int ky = WifiManager::KB_START_Y + r * (WifiManager::KB_KEY_H + 4);
-      if (startX >= kx && startX <= kx + WifiManager::KB_KEY_W && startY >= ky &&
-          startY <= ky + WifiManager::KB_KEY_H) {
-        wifiPassword += rows[r][c];
-        if (kbShift)
-          kbShift = false; // Auto-off shift after one char
-        WifiManager::showKeyboard();
-        handled = true;
-        break;
-      }
-    }
-  }
-
-  if (!handled) {
-    int btnY = WifiManager::KB_START_Y + 3 * (WifiManager::KB_KEY_H + 4);
-    if (startY >= btnY && startY <= btnY + WifiManager::KB_KEY_H) {
-      if (startX >= WifiManager::KB_BTN_SHIFT_X && startX <= WifiManager::KB_BTN_SHIFT_X + WifiManager::KB_BTN_SHIFT_W) {
-        // Shift / 123 toggle: lowercase→Shift, Shift→123,
-        // 123→lowercase
-        if (kbNumbers) {
-          kbNumbers = false;
-          kbShift = false;
-        } else if (kbShift) {
-          kbShift = false;
-          kbNumbers = true;
-        } else {
-          kbShift = true;
-        }
-        WifiManager::showKeyboard();
-      } else if (startX >= WifiManager::KB_BTN_SPACE_X && startX <= WifiManager::KB_BTN_SPACE_X + WifiManager::KB_BTN_SPACE_W) {
-        // Space
-        wifiPassword += ' ';
-        WifiManager::showKeyboard();
-      } else if (startX >= WifiManager::KB_BTN_DEL_X && startX <= WifiManager::KB_BTN_DEL_X + WifiManager::KB_BTN_DEL_W) {
-        // Backspace or BACK
-        if (wifiPassword.length() > 0) {
-          wifiPassword.remove(wifiPassword.length() - 1);
-          WifiManager::showKeyboard();
-        } else {
-          // BACK: return to WiFi list
-          currentState = STATE_WIFI_LIST;
-          WifiManager::showList();
-        }
-      } else if (startX >= WifiManager::KB_BTN_OK_X && startX <= WifiManager::KB_BTN_OK_X + WifiManager::KB_BTN_OK_W) {
-        // OK → connect
-        WifiManager::connect();
-      }
     }
   }
 }
