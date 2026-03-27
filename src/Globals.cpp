@@ -3,18 +3,26 @@
 
 State currentState = STATE_HOME;
 
-// Default dashboard configuration (Page 0: SOH, SOC, IN, BatTemp, RPM, Bar)
+// Default dashboard configuration (all slots empty until configured)
 DashSlot dashPages[MAX_PAGES][6] = {
-  {{0}, {1}, {2}, {3}, {4}, {5}}, // Page 0
-  {{1}, {1}, {1}, {1}, {1}, {1}}, // Default for other pages
-  {{1}, {1}, {1}, {1}, {1}, {1}},
-  {{1}, {1}, {1}, {1}, {1}, {1}}
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 0
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 1
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 2
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 3
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 4
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 5
+  {{-1}, {-1}, {-1}, {-1}, {-1}, {-1}}, // Page 6
 };
 int currentPage = 0;
+int numPages = 1;
+unsigned long pageSwipeTime = 0;
+int pickerScrollIndex = 0;
+int pickerSlotIndex = 0;
+int pickerPage = 0;
 int currentSlotIndex = 0;
 int menuIndex = 0;
-const int menuCount = 4;
-const char *menuItems[] = {"INFO", "WIFI", "BT SCAN", "BRIGHTNESS"};
+const int menuCount = 5;
+const char *menuItems[] = {"INFO", "WIFI", "BT SCAN", "BRIGHTNESS", "SETTINGS"};
 
 int currentBrightness = 128; // 0-255
 
@@ -55,7 +63,9 @@ float obdHVBatTemp = -99;
 float obdCabinTemp = -99;
 float obdACRpm = -1;
 float obdACPressure = -1;
+float obdExtTemp = -99;
 String obd12V = "";
+float obd12VFloat = -1;
 
 String btTargetMAC = "";
 String btTargetName = "";

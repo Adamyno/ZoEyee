@@ -11,4 +11,6 @@ public:
     static bool initOBD();
     static void processPolling();
     static void processHvacStep();  // Non-blocking HVAC state machine
+    static void resetPollIndex();   // Reset poll index (on page change)
+    static void buildPollList();    // Build poll list from current page
 };

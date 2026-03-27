@@ -576,8 +576,8 @@ void ObdManager::processHvacStep() {
           if (isotp.indexOf("6143") >= 0) {
             int rawExt = parseUDSBits(isotp, "6143", 110, 117);
             if (rawExt >= 0) {
-              float extTemp = rawExt - 40.0f;
-              Serial.printf("[ZOE] External Temp = %.0f C\n", extTemp);
+              obdExtTemp = rawExt - 40.0f;
+              Serial.printf("[ZOE] External Temp = %.0f C\n", obdExtTemp);
             }
             int rawPress = parseUDSBits(isotp, "6143", 134, 142);
             if (rawPress >= 0) {
@@ -662,28 +662,92 @@ void ObdManager::processHvacStep() {
 }
 
 // ============================================================
-// Two-phase polling: EVC queries (async) → HVAC queries (non-blocking SM)
-//
-// EVC queries use the normal async mechanism.
-// HVAC queries use a state machine (processHvacStep) that
-// sends one command per loop() iteration, keeping UI responsive.
+// Page-aware polling: only query parameters on the current page.
+// Poll list is built dynamically from dashPages[currentPage].
 // ============================================================
 
-// Poll steps: 0=SOC, 1=SOH, 2=BatTemp, 3=HVAC(state machine), 4=12V
-static const int POLL_STEPS = 5;
+// Poll list: unique param indices on the current page
+static int pagePollList[6] = {-1, -1, -1, -1, -1, -1};
+static int pagePollCount = 0;
+static bool pageNeedsHVAC = false;  // true if any HVAC param is on page
+static bool pageNeedsEVC = false;   // true if any EVC param is on page
+
+// Which HVAC queries are needed on this page
+static bool needHvac2121 = false; // Cabin temp (param 2)
+static bool needHvac2143 = false; // AC Pressure (param 5)
+static bool needHvac2144 = false; // AC RPM (param 4)
+
+void ObdManager::resetPollIndex() {
+  obdPollIndex = 0;
+  obdResponsePending = false;
+  lastOBDValue = "";
+  buildPollList();
+}
+
+void ObdManager::buildPollList() {
+  pagePollCount = 0;
+  pageNeedsHVAC = false;
+  pageNeedsEVC = false;
+  needHvac2121 = false;
+  needHvac2143 = false;
+  needHvac2144 = false;
+
+  for (int i = 0; i < 6; i++) {
+    int paramIdx = dashPages[currentPage][i].paramIndex;
+    if (paramIdx < 0 || paramIdx >= MAX_DASH_PARAMS) continue;
+
+    // Check for duplicates
+    bool dup = false;
+    for (int j = 0; j < pagePollCount; j++) {
+      if (pagePollList[j] == paramIdx) { dup = true; break; }
+    }
+    if (dup) continue;
+
+    pagePollList[pagePollCount++] = paramIdx;
+
+    // Track ECU needs
+    // ECU mapping: params 0,1,3 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
+    if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3) pageNeedsEVC = true;
+    if (paramIdx == 2) { pageNeedsHVAC = true; needHvac2121 = true; }
+    if (paramIdx == 4) { pageNeedsHVAC = true; needHvac2144 = true; }
+    if (paramIdx == 5 || paramIdx == 7) { pageNeedsHVAC = true; needHvac2143 = true; }
+  }
+
+  obdPollIndex = 0;
+  Serial.printf("[OBD] Poll list built: %d params, EVC=%d, HVAC=%d\n",
+                pagePollCount, pageNeedsEVC, pageNeedsHVAC);
+}
+
+// EVC poll steps: SOC(0), SOH(1), BatTemp(3)
+// Returns the OBD command for an EVC param index, or nullptr
+static const char* getEvcCommand(int paramIdx) {
+  switch (paramIdx) {
+    case 0: return "223206"; // SOH
+    case 1: return "222002"; // SOC
+    case 3: return "222001"; // Battery Temp
+    default: return nullptr;
+  }
+}
+
+// Poll steps for page-aware polling:
+// We iterate pagePollList for EVC params, then trigger HVAC if needed, then ATRV
 
 void ObdManager::processPolling() {
-  if (manualMode)
-    return; // SKIP automatic polling if user is debugging via Web Console
+  if (manualMode) return;
+
+  // If poll list is empty, build it
+  if (pagePollCount == 0 && currentState == STATE_HOME) {
+    buildPollList();
+  }
+  // Nothing to poll on this page
+  if (pagePollCount == 0 && !pageNeedsHVAC) return;
 
   // --- If HVAC state machine is active, it owns the OBD bus ---
   if (hvacState != HVAC_IDLE) {
     processHvacStep();
-    // Check if HVAC just finished
     if (hvacState == HVAC_IDLE) {
-      // HVAC done, resume normal polling at next step
       obdResponsePending = false;
-      obdPollIndex = (obdPollIndex) % POLL_STEPS; // Already incremented when HVAC started
+      // After HVAC done, continue with next poll step
     }
     return;
   }
@@ -712,7 +776,7 @@ void ObdManager::processPolling() {
       lastOBDValue = "";
       Serial.printf("[ZOE] Parse: '%s'\n", resp.c_str());
 
-      // === EVC responses (Service 22 → positive response 62) ===
+      // === EVC responses ===
       if (resp.indexOf("622002") >= 0 || resp.indexOf("62 20 02") >= 0) {
         int raw = parseUDSHex(resp, "622002", 2);
         if (raw >= 0) {
@@ -729,62 +793,77 @@ void ObdManager::processPolling() {
         int raw = parseUDSHex(resp, "622001", 1);
         if (raw >= 0) {
           obdHVBatTemp = raw - 40;
-          Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
+          Serial.printf("[ZOE] Bat Temp = %.0f\u00b0C\n", obdHVBatTemp);
         }
-      }
-      // === General ===
-      else if (resp.endsWith("V")) {
+      } else if (resp.endsWith("V")) {
         obd12V = resp;
-        Serial.printf("[ZOE] 12V = %s\n", obd12V.c_str());
+        // Parse float from "12.4V" style string
+        String numStr = resp;
+        numStr.replace("V", "");
+        numStr.trim();
+        obd12VFloat = numStr.toFloat();
+        Serial.printf("[ZOE] 12V = %s (%.1f)\n", obd12V.c_str(), obd12VFloat);
       } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0 ||
                  resp.indexOf("7F") >= 0) {
         Serial.printf("[ZOE] ECU error/no data: %s\n", resp.c_str());
       }
-      // "OK" from AT commands silently ignored
 
       DisplayManager::updateHomeOBD();
     }
 
-    // --- ECU context switching (blocking, guaranteed) ---
-    if (obdZoeMode) {
-      // Before EVC queries: ensure we're pointed at EVC
-      if (obdPollIndex == 0 && obdCurrentECU != 0) {
-        Serial.println("[OBD] Switching to EVC (7E4/7EC)...");
-        switchToECU("7E4", "7EC");
-        obdCurrentECU = 0;
-      }
+    // --- Build the dynamic poll sequence ---
+    // Phase 1: EVC params from pagePollList
+    // Phase 2: HVAC (if needed)
+    // Phase 3: ATRV (always)
+
+    // Count EVC params in poll list
+    int evcCount = 0;
+    for (int i = 0; i < pagePollCount; i++) {
+      int p = pagePollList[i];
+      if (p == 0 || p == 1 || p == 3) evcCount++;
+    }
+    int hvacStep = evcCount; // poll index where HVAC starts
+    int atrvStep = hvacStep + (pageNeedsHVAC ? 1 : 0); // ATRV after HVAC
+    int totalSteps = atrvStep + 1;
+
+    // ECU switching
+    if (obdZoeMode && obdPollIndex < evcCount && obdCurrentECU != 0) {
+      Serial.println("[OBD] Switching to EVC (7E4/7EC)...");
+      switchToECU("7E4", "7EC");
+      obdCurrentECU = 0;
     }
 
-    // --- Send the next data request ---
     lastOBDSentTime = millis();
     obdResponsePending = true;
 
     if (obdZoeMode) {
-      switch (obdPollIndex) {
-      // EVC (Service 22) – async
-      case 0:
-        sendCommand("222002");
-        break; // SOC
-      case 1:
-        sendCommand("223206");
-        break; // SOH
-      case 2:
-        sendCommand("222001");
-        break; // Battery Rack Temp
-      // HVAC – non-blocking state machine
-      case 3:
-        hvacState = HVAC_SWITCH_SH; // Start HVAC state machine
+      if (obdPollIndex < evcCount) {
+        // Find the nth EVC param
+        int evcIdx = 0;
+        for (int i = 0; i < pagePollCount; i++) {
+          int p = pagePollList[i];
+          if (p == 0 || p == 1 || p == 3) {
+            if (evcIdx == obdPollIndex) {
+              const char *cmd = getEvcCommand(p);
+              if (cmd) sendCommand(cmd);
+              break;
+            }
+            evcIdx++;
+          }
+        }
+      } else if (obdPollIndex == hvacStep && pageNeedsHVAC) {
+        // Start HVAC state machine
+        hvacState = HVAC_SWITCH_SH;
         hvacCmdSentTime = 0;
         lastOBDValue = "";
-        obdPollIndex = 4; // Pre-set next step for when HVAC completes
-        processHvacStep(); // Kick off the first step immediately
-        return; // Don't fall through to obdPollIndex increment
-      // General
-      case 4:
+        processHvacStep();
+        obdPollIndex++;
+        return;
+      } else {
+        // ATRV
         sendCommand("ATRV");
-        break; // 12V Battery
       }
-      obdPollIndex = (obdPollIndex + 1) % POLL_STEPS;
+      obdPollIndex = (obdPollIndex + 1) % totalSteps;
     } else {
       sendCommand("ATRV");
     }

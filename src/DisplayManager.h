@@ -12,8 +12,12 @@ public:
     static void drawMenu(bool fullRedraw = true);
     static void showBrightness(bool fullRedraw = true);
     static void showInfo();
+    static void showSettings(bool fullRedraw = true);
+    static void showSlotPicker(bool fullRedraw = true);
+    static void drawPageIndicator();
     static void drawTopBar(bool softRefresh = false);
     static void drawStatusLED();
 };
 
 #endif
+

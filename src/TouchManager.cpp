@@ -4,9 +4,11 @@
 #include "DisplayManager.h"
 #include "WifiManager.h"
 #include "BluetoothManager.h"
+#include "ObdManager.h"
 #include <Arduino_GFX_Library.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <Preferences.h>
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
@@ -54,7 +56,8 @@ void TouchManager::processGestures() {
     int deltaX = tx - startX;
     int deltaY = ty - startY;
 
-    if (abs(deltaY) > 10 && abs(deltaX) < 40) {
+    if (abs(deltaY) > 10 && abs(deltaX) < 40 &&
+        currentState != STATE_SLOT_PICKER && currentState != STATE_SETTINGS) {
       isSwipingBrightness = true;
       int newBright = currentBrightness - deltaY;
       newBright = constrain(newBright, 0, 255);
@@ -65,6 +68,27 @@ void TouchManager::processGestures() {
       }
       startY = ty;
     }
+
+    // Long press detection while finger is still down (HOME screen only)
+    if (currentState == STATE_HOME && !isSwipingBrightness) {
+      unsigned long holdDuration = millis() - touchStartTime;
+      if (holdDuration > 800 && abs(deltaX) < 30 && abs(deltaY) < 30) {
+        int cellW = 160, cellH = 57;
+        int col = startX / cellW;
+        int row = startY / cellH;
+        if (col >= 0 && col < 2 && row >= 0 && row < 3) {
+          int cellIdx = row * 2 + col;
+          pickerPage = currentPage;
+          pickerSlotIndex = cellIdx;
+          pickerScrollIndex = 0;
+          currentState = STATE_SLOT_PICKER;
+          DisplayManager::showSlotPicker();
+          touching = false;  // consume the touch
+          return;
+        }
+      }
+    }
+
     lastX = tx;
     lastY = ty;
   } else {
@@ -78,6 +102,26 @@ void TouchManager::processGestures() {
       unsigned long tapDuration = millis() - touchStartTime;
 
       if (currentState == STATE_HOME) {
+        // Long press already handled during touch-hold above, skip here
+        // Swipe left/right -> page navigation
+        if (abs(deltaY) < 50 && tapDuration < 500) {
+          if (deltaX > 80 && numPages > 1) {
+            currentPage = (currentPage - 1 + numPages) % numPages;
+            pageSwipeTime = millis();
+            ObdManager::resetPollIndex();
+            DisplayManager::showHome();
+            touching = false;
+            return;
+          } else if (deltaX < -80 && numPages > 1) {
+            currentPage = (currentPage + 1) % numPages;
+            pageSwipeTime = millis();
+            ObdManager::resetPollIndex();
+            DisplayManager::showHome();
+            touching = false;
+            return;
+          }
+        }
+        // Double tap -> menu
         if (abs(deltaX) < 30 && abs(deltaY) < 30 && tapDuration < 500) {
           if (millis() - lastTapTime < 500) {
             currentState = STATE_MENU;
@@ -85,6 +129,71 @@ void TouchManager::processGestures() {
             lastTapTime = 0;
           } else {
             lastTapTime = millis();
+          }
+        }
+        touching = false;
+        return;
+      }
+
+      // === Slot Picker: independent handler (before horizontal swipe block) ===
+      if (currentState == STATE_SLOT_PICKER) {
+        int totalItems = 1 + MAX_DASH_PARAMS;
+        // Swipe up/down to scroll picker (anywhere on screen)
+        if (abs(deltaX) < 60 && abs(deltaY) > 25) {
+          if (deltaY > 25 && pickerScrollIndex > 0) {
+            pickerScrollIndex--;
+            DisplayManager::showSlotPicker(false);
+          } else if (deltaY < -25 && pickerScrollIndex < totalItems - 3) {
+            pickerScrollIndex++;
+            DisplayManager::showSlotPicker(false);
+          }
+        }
+        // Tap to select item
+        else if (abs(deltaX) < 20 && abs(deltaY) < 20 && tapDuration < 500) {
+          if (startY < 30 && startX < 40) {
+            // Back button
+            currentState = STATE_HOME;
+            DisplayManager::showHome();
+          } else if (startY >= 33) {
+            int itemH = 43;
+            int vis = (startY - 33) / itemH;
+            if (vis >= 0 && vis < 3) {
+              int idx = pickerScrollIndex + vis;
+              if (idx < totalItems) {
+                int newParamIdx = (idx == 0) ? EMPTY_SLOT : (idx - 1);
+                dashPages[pickerPage][pickerSlotIndex].paramIndex = newParamIdx;
+                char key[8];
+                snprintf(key, sizeof(key), "p%ds%d", pickerPage, pickerSlotIndex);
+                preferences.putChar(key, (int8_t)newParamIdx);
+                currentState = STATE_HOME;
+                ObdManager::resetPollIndex();
+                DisplayManager::showHome();
+              }
+            }
+          }
+        }
+        touching = false;
+        return;
+      }
+
+      // === Settings: independent handler ===
+      if (currentState == STATE_SETTINGS) {
+        if (abs(deltaY) < 50 && abs(deltaX) > 60) {
+          if (deltaX > 60 && numPages > 1) {
+            numPages--;
+            if (currentPage >= numPages) currentPage = numPages - 1;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettings(false);
+          } else if (deltaX < -60 && numPages < MAX_PAGES) {
+            numPages++;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettings(false);
+          }
+        }
+        if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
+          if (startY < 40 && startX < 80) {
+            currentState = STATE_MENU;
+            DisplayManager::drawMenu();
           }
         }
         touching = false;
@@ -178,6 +287,9 @@ void TouchManager::processGestures() {
               } else if (menuIndex == 3) {
                 currentState = STATE_BRIGHTNESS;
                 DisplayManager::showBrightness();
+              } else if (menuIndex == 4) {
+                currentState = STATE_SETTINGS;
+                DisplayManager::showSettings();
               }
             }
           } else if (currentState == STATE_BT_LIST) {

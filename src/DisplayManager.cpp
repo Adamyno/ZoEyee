@@ -331,6 +331,7 @@ static uint16_t colorACPressure(float v) {
 
 struct DashParam {
   const char *label;         // Short name: "SOH", "SOC", etc.
+  const char *fullName;      // Full name for picker: "Battery SOH", etc.
   const char *unit;          // Unit string: "%", "°C", "", etc.
   float noDataSentinel;      // Below this = no data
   bool isInt;                // Show as integer?
@@ -338,6 +339,8 @@ struct DashParam {
   uint16_t iconColor;        // Primary icon color (RGB565)
   void (*drawIcon)(Arduino_GFX *g, int cx, int cy, uint16_t color);
   uint16_t (*getValueColor)(float value);  // Dynamic text color
+  // OBD metadata
+  int ecuId;                 // 0=EVC, 1=HVAC
 };
 
 // --- Icon drawing functions ---
@@ -478,29 +481,67 @@ static void drawIconGauge(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->drawLine(cx - 11, cy + 1, cx + 11, cy + 1, color);
 }
 
-// --- Dashboard parameter definitions ---
-// This array drives the entire home screen layout.
-// Future: user can swap entries per slot via long-press picker.
+static void drawIcon12VBattery(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // 12V car battery: rectangle body + 2 terminal posts on top
+  int bw = 26, bh = 32;
+  int bx = cx - bw/2, by = cy - bh/2 + 4;
+  // Battery body
+  g->drawRoundRect(bx, by, bw, bh, 3, color);
+  g->drawRoundRect(bx+1, by+1, bw-2, bh-2, 2, color);
+  // Terminal posts (2 small rectangles on top)
+  g->fillRect(cx - 8, by - 4, 5, 5, color);
+  g->fillRect(cx + 3, by - 4, 5, 5, color);
+  // "12" text inside
+  g->setFont(&FreeSans9pt7b);
+  g->setTextColor(color);
+  g->setTextSize(1);
+  g->setCursor(cx - 8, cy + 12);
+  g->print("12");
+}
+
+static void drawIconOutdoorThermo(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Outdoor thermometer similar to cabin but with cyan/blue color
+  // Outer bulb at bottom
+  g->fillCircle(cx, cy + 17, 9, color);
+  // Tall stem from top to bulb
+  g->fillRoundRect(cx - 5, cy - 22, 10, 39, 5, color);
+  // Inner mercury (cyan)
+  uint16_t inner = 0x07FF; // CYAN
+  g->fillCircle(cx, cy + 17, 6, inner);
+  g->fillRect(cx - 3, cy - 14, 6, 29, inner);
+  // Tick marks
+  uint16_t tick = 0x7BEF;
+  g->drawLine(cx + 6, cy - 18, cx + 10, cy - 18, tick);
+  g->drawLine(cx + 6, cy - 12, cx + 9,  cy - 12, tick);
+  g->drawLine(cx + 6, cy - 6,  cx + 10, cy - 6,  tick);
+  g->drawLine(cx + 6, cy,      cx + 9,  cy,      tick);
+  g->drawLine(cx + 6, cy + 6,  cx + 10, cy + 6,  tick);
+}
 
 static DashParam dashParams[] = {
-  // label   unit   sentinel  isInt  dec  color   drawIcon              getValueColor
-  {"SOH",   "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite},
-  {"",      "%",    -1,  false, 0, 0xFFFF, drawIconBatterySOC,     colorWhite},
-  {"IN",    "\xB0""C", -99, false, 0, WHITE,  drawIconThermometerBig, colorWhite},
-  {"",      "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo,  colorBatTemp},
-  {"RPM",   "",     -1,  true,  0, 0xB7FF, drawIconSnowflake,      colorACRpm},
-  {"BAR",   "",     -1,  false, 1, 0xB7FF, drawIconSnowflake,      colorACPressure},
+  // label  fullName          unit   sentinel isInt dec color   drawIcon              getValueColor     ecuId
+  {"SOH",  "Battery SOH",    "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite,       0},
+  {"",     "Battery SOC",    "%",    -1,  false, 0, 0xFFFF, drawIconBatterySOC,     colorWhite,       0},
+  {"IN",   "Cabin Temp",     "\xB0""C", -99, false, 0, WHITE, drawIconThermometerBig, colorWhite,       1},
+  {"",     "Battery Temp",   "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo, colorBatTemp,    0},
+  {"RPM",  "AC Compressor",  "",     -1,  true,  0, 0xB7FF, drawIconSnowflake,      colorACRpm,       1},
+  {"BAR",  "AC Pressure",    "",     -1,  false, 1, 0xB7FF, drawIconSnowflake,      colorACPressure,  1},
+  {"V",    "12V Battery",    "",     -1,  false, 1, 0xFD20, drawIcon12VBattery,     colorWhite,       2},
+  {"OUT",  "Ext. Temp",      "\xB0""C", -99, false, 0, 0x07FF, drawIconOutdoorThermo,  colorWhite,       1},
 };
+static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
-// Helper: get current OBD value for slot index
-static float getSlotValue(int slotIndex) {
-  switch (slotIndex) {
+// Helper: get current OBD value for a parameter index
+static float getParamValue(int paramIndex) {
+  switch (paramIndex) {
     case 0: return (float)obdSOH;
     case 1: return obdSOC;
     case 2: return obdCabinTemp;
     case 3: return obdHVBatTemp;
     case 4: return obdACRpm;
     case 5: return obdACPressure;
+    case 6: return obd12VFloat;
+    case 7: return obdExtTemp;
     default: return -999;
   }
 }
@@ -566,32 +607,30 @@ void DisplayManager::showHome() {
   }
 
   for (int i = 0; i < 6; i++) {
+    int paramIdx = dashPages[currentPage][i].paramIndex;
+    if (paramIdx < 0 || paramIdx >= DASH_PARAM_COUNT) continue; // Empty cell
+
     int col = i % cols;
     int row = i / cols;
     int x0 = col * cellW;
     int y0 = row * cellH;
     int cx = x0 + 22;
-    int cy = y0 + 26;  // icon center (moved down 8px)
+    int cy = y0 + 26;
 
-    // Draw colored icon
-    const DashParam &p = dashParams[i];
+    const DashParam &p = dashParams[paramIdx];
     if (p.drawIcon) {
       p.drawIcon(gfx, cx, cy, p.iconColor);
     }
 
-    // Draw label: skip if empty, draw vertically on left edge for Cabin
+    // Draw label
     if (strlen(p.label) > 0) {
       gfx->setFont(&FreeSans9pt7b);
       gfx->setTextColor(p.iconColor);
       gfx->setTextSize(1);
 
-      if (i == 2) {
-        // "IN" label rotated 90° (sideways, read by tilting head right)
-        // Use setRotation to draw sideways, then restore
-        gfx->setRotation(0);  // Portrait: text draws top-to-bottom
-        // Map landscape coords (x0+2, y0+8) to portrait orientation
-        // In rotation 1 (landscape): pixel (lx,ly) = portrait (172-1-ly, lx)
-        // So portrait coords: px = 172-1-(y0+20), py = x0+2
+      if (paramIdx == 2) {
+        // "IN" label rotated 90°
+        gfx->setRotation(0);
         int px = 172 - 1 - (y0 + 30);
         int py = x0 + 2;
         gfx->setFont(&FreeSans9pt7b);
@@ -599,9 +638,8 @@ void DisplayManager::showHome() {
         gfx->setTextSize(1);
         gfx->setCursor(px, py + 14);
         gfx->print(p.label);
-        gfx->setRotation(1);  // Restore landscape
+        gfx->setRotation(1);
       } else {
-        // Center label below the icon
         int16_t lx, ly;
         uint16_t lw, lh;
         gfx->getTextBounds(p.label, 0, 0, &lx, &ly, &lw, &lh);
@@ -611,22 +649,32 @@ void DisplayManager::showHome() {
     }
 
     // Draw value + unit
-    float val = getSlotValue(i);
+    float val = getParamValue(paramIdx);
     drawCellValue(gfx, x0, y0, cellH, p, val);
   }
 
-  // Draw status LED overlaying top-right corner
+  // Draw status LED
   drawStatusLED();
+
+  // Draw page indicator if recently swiped
+  if (pageSwipeTime > 0) {
+    drawPageIndicator();
+  }
 }
 
 void DisplayManager::updateHomeOBD() {
   // Differential update: only redraw cells whose values have changed.
   static float prevValues[6] = {-999, -999, -999, -999, -999, -999};
+  static int prevPage = -1;
   static bool firstRun = true;
 
-  if (firstRun || currentState != STATE_HOME) {
+  if (firstRun || currentState != STATE_HOME || prevPage != currentPage) {
     showHome();
-    for (int i = 0; i < 6; i++) prevValues[i] = getSlotValue(i);
+    for (int i = 0; i < 6; i++) {
+      int paramIdx = dashPages[currentPage][i].paramIndex;
+      prevValues[i] = (paramIdx >= 0 && paramIdx < DASH_PARAM_COUNT) ? getParamValue(paramIdx) : -999;
+    }
+    prevPage = currentPage;
     firstRun = false;
     return;
   }
@@ -636,7 +684,10 @@ void DisplayManager::updateHomeOBD() {
   const int cellH = 57;
 
   for (int i = 0; i < 6; i++) {
-    float newVal = getSlotValue(i);
+    int paramIdx = dashPages[currentPage][i].paramIndex;
+    if (paramIdx < 0 || paramIdx >= DASH_PARAM_COUNT) continue; // Empty cell
+
+    float newVal = getParamValue(paramIdx);
     float diff = newVal - prevValues[i];
     if (diff < 0) diff = -diff;
     if (diff < 0.05f) continue;
@@ -648,11 +699,11 @@ void DisplayManager::updateHomeOBD() {
     int x0 = col * cellW;
     int y0 = row * cellH;
 
-    // Clear only the text area (right side of cell, after icon+label)
+    // Clear only the text area
     gfx->fillRect(x0 + 44, y0 + 2, cellW - 46, cellH - 4, BLACK);
 
     // Redraw value + unit
-    drawCellValue(gfx, x0, y0, cellH, dashParams[i], newVal);
+    drawCellValue(gfx, x0, y0, cellH, dashParams[paramIdx], newVal);
   }
 
   drawStatusLED();
@@ -700,39 +751,38 @@ void DisplayManager::drawMenu(bool fullRedraw) {
   }
   gfx->fillRect(28, 50, 264, 122, BLACK);
 
-  gfx->setFont(&FreeSans18pt7b);
-  gfx->setTextColor(WHITE, BLACK);
-  gfx->setTextSize(1);
-  int textX = 160 - (strlen(menuItems[menuIndex]) * 9);
-  if (menuIndex == 0)
-    textX = 138;
-  else if (menuIndex == 1)
-    textX = 120;
-  else if (menuIndex == 2)
-    textX = 90;
-  else if (menuIndex == 3)
-    textX = 60;
-  gfx->setCursor(textX, 108);
-  gfx->print(menuItems[menuIndex]);
-
-  int iconX = 160, iconY = 145;
+  int iconX = 160, iconY = 111;
   if (menuIndex == 0) {
     gfx->drawXBitmap(iconX - 28, iconY - 28, icon_info_menu_bits, 56, 56,
                      WHITE);
   } else if (menuIndex == 1) {
-    gfx->drawXBitmap(110, 114, icon_wifi_menu_bits, 100, 56, WHITE);
+    gfx->drawXBitmap(iconX - 50, iconY - 28, icon_wifi_menu_bits, 100, 56, WHITE);
   } else if (menuIndex == 2) {
-    gfx->drawXBitmap(iconX - 18, 117, icon_bt_menu_bits, 37, 56, 0x019B);
+    gfx->drawXBitmap(iconX - 18, iconY - 28, icon_bt_menu_bits, 37, 56, 0x019B);
   } else if (menuIndex == 3) {
-    gfx->fillCircle(iconX, iconY, 8, YELLOW);
+    gfx->fillCircle(iconX, iconY, 16, YELLOW);
     for (int a = 0; a < 8; a++) {
       float angle = a * 3.14159f / 4.0f;
-      int x1 = iconX + (int)(11 * cos(angle));
-      int y1 = iconY + (int)(11 * sin(angle));
-      int x2 = iconX + (int)(16 * cos(angle));
-      int y2 = iconY + (int)(16 * sin(angle));
+      int x1 = iconX + (int)(20 * cos(angle));
+      int y1 = iconY + (int)(20 * sin(angle));
+      int x2 = iconX + (int)(28 * cos(angle));
+      int y2 = iconY + (int)(28 * sin(angle));
       gfx->drawLine(x1, y1, x2, y2, YELLOW);
+      gfx->drawLine(x1 + 1, y1, x2 + 1, y2, YELLOW);
+      gfx->drawLine(x1, y1 + 1, x2, y2 + 1, YELLOW);
     }
+  } else if (menuIndex == 4) {
+    // Grey gear icon
+    uint16_t gearColor = 0x7BEF;
+    gfx->fillCircle(iconX, iconY, 14, gearColor);
+    gfx->fillCircle(iconX, iconY, 7, BLACK);
+    for (int a = 0; a < 8; a++) {
+      float angle = a * 3.14159f / 4.0f;
+      int tx = iconX + (int)(18 * cos(angle));
+      int ty = iconY + (int)(18 * sin(angle));
+      gfx->fillCircle(tx, ty, 5, gearColor);
+    }
+    gfx->fillCircle(iconX, iconY, 7, BLACK);
   }
 }
 
@@ -824,3 +874,142 @@ void DisplayManager::drawTopBar(bool softRefresh) {
   drawStatusLED();
 }
 
+void DisplayManager::showSettings(bool fullRedraw) {
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    drawTopBar();
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(98, 35);
+    gfx->println("SETTINGS");
+    gfx->drawLine(0, 40, 320, 40, WHITE);
+
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(0x7BEF, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(70, 65);
+    gfx->print("Number of pages");
+
+    // Left/right arrows
+    gfx->fillTriangle(60, 110, 80, 95, 80, 125, CYAN);
+    gfx->fillTriangle(260, 110, 240, 95, 240, 125, CYAN);
+  }
+
+  // Clear number area
+  gfx->fillRect(90, 80, 140, 60, BLACK);
+  gfx->setFont(&FreeSans24pt7b);
+  gfx->setTextColor(WHITE, BLACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(150, 125);
+  gfx->printf("%d", numPages);
+
+  // Page info
+  gfx->fillRect(60, 145, 200, 25, BLACK);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF, BLACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(90, 162);
+  gfx->printf("Swipe L/R to adjust");
+}
+
+void DisplayManager::drawPageIndicator() {
+  if (numPages <= 1) return;
+
+  const int dotR = 4;
+  const int dotSpacing = 14;
+  int totalW = numPages * dotSpacing - (dotSpacing - dotR * 2);
+  int startX = (320 - totalW) / 2;
+  int y = 164;
+
+  // Clear indicator area
+  gfx->fillRect(startX - 6, y - dotR - 2, totalW + 12, dotR * 2 + 4, BLACK);
+
+  for (int i = 0; i < numPages; i++) {
+    int cx = startX + i * dotSpacing + dotR;
+    if (i == currentPage) {
+      gfx->fillCircle(cx, y, dotR, WHITE);
+    } else {
+      gfx->drawCircle(cx, y, dotR, 0x7BEF);
+    }
+  }
+}
+
+void DisplayManager::showSlotPicker(bool fullRedraw) {
+  // Total items: EMPTY + DASH_PARAM_COUNT
+  int totalItems = 1 + DASH_PARAM_COUNT;
+  int itemH = 43;
+  int startY = 33;
+  int currentParamIdx = dashPages[pickerPage][pickerSlotIndex].paramIndex;
+
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    // Header
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(60, 25);
+    gfx->print("SELECT MODULE");
+    gfx->drawLine(0, 30, 320, 30, WHITE);
+    // Back arrow (top left)
+    gfx->fillTriangle(5, 14, 15, 8, 15, 20, WHITE);
+    gfx->fillRect(15, 12, 6, 4, WHITE);
+  }
+
+  // Clear items area only (below header)
+  gfx->fillRect(0, startY, 312, 172 - startY, BLACK);
+
+  for (int vis = 0; vis < 3; vis++) {
+    int idx = pickerScrollIndex + vis;
+    if (idx >= totalItems) break;
+
+    int y0 = startY + vis * itemH;
+
+    // Highlight if this is the currently selected param
+    bool isSelected = false;
+    if (idx == 0 && currentParamIdx < 0) isSelected = true;
+    if (idx > 0 && (idx - 1) == currentParamIdx) isSelected = true;
+
+    if (isSelected) {
+      gfx->fillRect(0, y0, 312, itemH - 2, 0x0333);
+    }
+
+    if (idx == 0) {
+      gfx->setFont(&FreeSans12pt7b);
+      gfx->setTextColor(0x7BEF, isSelected ? 0x0333 : BLACK);
+      gfx->setTextSize(1);
+      gfx->setCursor(50, y0 + 28);
+      gfx->print("EMPTY");
+    } else {
+      int paramIdx = idx - 1;
+      const DashParam &p = dashParams[paramIdx];
+      int iconCX = 22;
+      int iconCY = y0 + 20;
+      if (p.drawIcon) {
+        p.drawIcon(gfx, iconCX, iconCY, p.iconColor);
+      }
+      gfx->setFont(&FreeSans12pt7b);
+      gfx->setTextColor(WHITE, isSelected ? 0x0333 : BLACK);
+      gfx->setTextSize(1);
+      gfx->setCursor(50, y0 + 28);
+      gfx->print(p.fullName);
+    }
+
+    if (vis < 2) {
+      gfx->drawLine(0, y0 + itemH - 2, 312, y0 + itemH - 2, 0x2104);
+    }
+  }
+
+  // Scroll indicator
+  if (totalItems > 3) {
+    int scrollBarH = 100;
+    int scrollBarY = 35;
+    gfx->fillRect(314, scrollBarY, 4, scrollBarH, 0x2104);
+    int handleH = (3 * scrollBarH) / totalItems;
+    if (handleH < 10) handleH = 10;
+    int maxScroll = totalItems - 3;
+    if (maxScroll < 1) maxScroll = 1;
+    int handleY = scrollBarY + (pickerScrollIndex * (scrollBarH - handleH)) / maxScroll;
+    gfx->fillRect(314, handleY, 4, handleH, 0x7BEF);
+  }
+}

@@ -22,7 +22,7 @@
 #define TOUCH_ADDR 0x63
 
 // Software Version
-#define SW_VERSION "1.5.1"
+#define SW_VERSION "1.6.0"
 
 // Color definitions (RGB 565)
 #define BLACK 0x0000
@@ -37,6 +37,8 @@
 // System limits
 #define MAX_BLE_DEVICES 30
 #define MAX_WIFI_NETWORKS 20
+#define MAX_PAGES 7
+#define EMPTY_SLOT -1
 
 // WiFi AP credentials
 #define WIFI_AP_SSID "ZoEyee-Config"

@@ -46,6 +46,17 @@ void setup(void) {
   btTargetMAC = preferences.getString("bt_mac", "");
   btTargetName = preferences.getString("bt_name", "");
   btTargetType = preferences.getUChar("bt_type", 0);
+  numPages = preferences.getUChar("pages", 1);
+  if (numPages < 1) numPages = 1;
+  if (numPages > MAX_PAGES) numPages = MAX_PAGES;
+  // Load slot configurations
+  for (int p = 0; p < MAX_PAGES; p++) {
+    for (int s = 0; s < 6; s++) {
+      char key[8];
+      snprintf(key, sizeof(key), "p%ds%d", p, s);
+      dashPages[p][s].paramIndex = preferences.getChar(key, -1);
+    }
+  }
   
   WiFi.mode(WIFI_STA); // Initialize LwIP networking stack unconditionally to avoid WebServer crash
   
@@ -258,6 +269,13 @@ void loop() {
     DisplayManager::drawTopBar(true);
   }
   // ----------------------------
+
+  // Page indicator timeout
+  if (currentState == STATE_HOME && pageSwipeTime > 0 && millis() - pageSwipeTime > 2000) {
+    pageSwipeTime = 0;
+    // Clear indicator area
+    gfx->fillRect(0, 156, 320, 16, BLACK);
+  }
 
   delay(20);
 }

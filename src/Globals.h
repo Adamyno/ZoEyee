@@ -21,7 +21,8 @@ enum State {
   STATE_BT_LIST,
   STATE_BT_DEVICE_INFO,
   STATE_BT_STATUS,
-  STATE_SLOT_PICKER   // New: Parameter selection overlay
+  STATE_SLOT_PICKER,   // Parameter selection overlay
+  STATE_SETTINGS       // Settings screen
 };
 
 // HVAC Polling State Machine (non-blocking)
@@ -60,9 +61,14 @@ struct DashSlot {
   int paramIndex;     // Index into DisplayManager's parameter register
 };
 
-#define MAX_PAGES 4
+#define MAX_DASH_PARAMS 8
 extern DashSlot dashPages[MAX_PAGES][6];
 extern int currentPage;
+extern int numPages;
+extern unsigned long pageSwipeTime;
+extern int pickerScrollIndex;
+extern int pickerSlotIndex;
+extern int pickerPage;
 extern int currentSlotIndex; // For tracking which slot is being edited
 
 extern State currentState;
@@ -111,7 +117,9 @@ extern float obdHVBatTemp;
 extern float obdCabinTemp;
 extern float obdACRpm;
 extern float obdACPressure;
+extern float obdExtTemp;
 extern String obd12V;
+extern float obd12VFloat;
 
 extern String btTargetMAC;
 extern String btTargetName;
