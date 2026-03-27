@@ -218,7 +218,7 @@ void loop() {
     }
   }
 
-  if (currentState == STATE_HOME && isBluetoothConnected) {
+  if (currentState == STATE_HOME && isBluetoothConnected && !bleConnecting) {
     ObdManager::processPolling();
   }
 

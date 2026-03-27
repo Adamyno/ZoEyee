@@ -405,13 +405,15 @@ bool ObdManager::initOBD() {
 
   if (!isELM) {
     Serial.println("[BLE] Nem válaszolt mint ELM327. Lecsatlakozás.");
-    gfx->fillRect(30, 50, 260, 60, BLACK);
-    gfx->setFont(&FreeSans12pt7b);
-    gfx->setTextColor(RED, BLACK);
-    gfx->setTextSize(1);
-    gfx->setCursor(40, 75);
-    gfx->print("Not an OBD device");
-    delay(2000);
+    if (currentState == STATE_BT_LIST || currentState == STATE_BT_STATUS || currentState == STATE_BT_DEVICE_INFO) {
+      gfx->fillRect(30, 50, 260, 60, BLACK);
+      gfx->setFont(&FreeSans12pt7b);
+      gfx->setTextColor(RED, BLACK);
+      gfx->setTextSize(1);
+      gfx->setCursor(40, 75);
+      gfx->print("Not an OBD device");
+      delay(2000);
+    }
     return false;
   }
 
@@ -421,12 +423,14 @@ bool ObdManager::initOBD() {
   sendATAndWait("ATE0");
 
   Serial.println("[OBD] ZOE CAN protokoll beállítás...");
-  gfx->fillRect(30, 50, 260, 40, BLACK);
-  gfx->setFont(&FreeSans9pt7b);
-  gfx->setTextColor(YELLOW, BLACK);
-  gfx->setTextSize(1);
-  gfx->setCursor(50, 75);
-  gfx->print("Setting up CAN...");
+  if (currentState == STATE_BT_LIST || currentState == STATE_BT_STATUS || currentState == STATE_BT_DEVICE_INFO) {
+    gfx->fillRect(30, 50, 260, 40, BLACK);
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(50, 75);
+    gfx->print("Setting up CAN...");
+  }
 
   // CAN protocol 6 (ISO 15765-4, 11-bit, 500 kbaud)
   sendATAndWait("ATSP6");
