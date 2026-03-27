@@ -460,113 +460,229 @@ bool ObdManager::initOBD() {
 }
 
 // ============================================================
-// Blocking HVAC readout – runs as a single atomic operation.
-// Switches to HVAC ECU, queries cabin & external temp, then
-// switches back to EVC. No other command can interfere.
+// Non-blocking HVAC state machine.
+// Each call processes ONE step: either sends a command or
+// checks for a response. The main loop remains responsive.
 // ============================================================
 
-void ObdManager::readHvacBlocking() {
-  Serial.println("[OBD] === HVAC blocking read START ===");
+// Helper: parse IsoTP response from assembled hex string (reused from old code)
+static String parseIsoTpResponse(const String &resp) {
+  String r = resp;
+  r.trim();
+  r.replace(" ", "");
+  r.toUpperCase();
 
-  // 1. Switch to HVAC ECU (ATSH, ATCRA, ATFCSH)
-  switchToECU("744", "764");
-  obdCurrentECU = 1;
+  if (r.length() < 2) return "";
 
-  // 2. Switch to CanZE-compatible mode for multi-frame
-  sendATAndWait("ATS0");         // No spaces (raw hex concat)
-  sendATAndWait("ATCAF0");       // CAN Auto Formatting OFF
-  sendATAndWait("ATAL");         // Allow Long messages
-  sendATAndWait("ATFCSD300000"); // FC: ContinueToSend, BS=0, STmin=0
-  sendATAndWait("ATFCSM1");      // User-defined FC mode
-  sendATAndWait("ATSTFF");       // Max ELM327 timeout
+  char frameType = r.charAt(0);
 
-  // 3. Open vendor diagnostic session on HVAC
-  String sessResp = sendIsoTpRequest("10C0", 2000);
-  Serial.printf("[OBD] HVAC session: '%s'\n", sessResp.c_str());
-
-  // =================================================================
-  // 4. Query 2121 – CABIN TEMP (CanZE: IH_InCarTemp)
-  //    Bits 26-35, res 0.1, offset 400 → (raw * 0.1) - 40.0
-  // =================================================================
-  String resp2121 = sendIsoTpRequest("2121", 5000);
-  Serial.printf("[OBD] 2121 IsoTP (%d chars): '%s'\n", resp2121.length(),
-                resp2121.c_str());
-  if (resp2121.indexOf("6121") >= 0) {
-    int rawCabin = parseUDSBits(resp2121, "6121", 26, 35);
-    if (rawCabin >= 0) {
-      obdCabinTemp = (rawCabin * 0.1f) - 40.0f;
-      Serial.printf("[ZOE] Cabin Temp = %.1f C (raw=%d)\n", obdCabinTemp,
-                    rawCabin);
-    }
+  if (frameType == '0') {
+    // SINGLE frame
+    int len = 0;
+    if (r.charAt(1) >= '0' && r.charAt(1) <= '9')
+      len = r.charAt(1) - '0';
+    else if (r.charAt(1) >= 'A' && r.charAt(1) <= 'F')
+      len = r.charAt(1) - 'A' + 10;
+    String hexData = r.substring(2);
+    if ((int)hexData.length() > len * 2)
+      hexData = hexData.substring(0, len * 2);
+    return hexData;
   }
 
-  // =================================================================
-  // 5. Query 2143 – ExternalTemp + ACPressure (multi-frame!)
-  //    IH_ExternalTemp: bits 110-117, res 1, offset 40
-  //    IH_ACHighPressureSensor: bits 134-142, res 0.1
-  // =================================================================
-  String resp2143 = sendIsoTpRequest("2143", 5000);
-  Serial.printf("[OBD] 2143 IsoTP (%d chars): '%s'\n", resp2143.length(),
-                resp2143.c_str());
-  if (resp2143.indexOf("6143") >= 0) {
-    int rawExt = parseUDSBits(resp2143, "6143", 110, 117);
-    if (rawExt >= 0) {
-      float extTemp = rawExt - 40.0f;
-      Serial.printf("[ZOE] External Temp = %.0f C (raw=%d)\n", extTemp, rawExt);
+  if (frameType == '1') {
+    // FIRST frame + inline Consecutive Frames
+    if (r.length() < 16) return "";
+    String lenHex = r.substring(1, 4);
+    int totalLen = (int)strtol(lenHex.c_str(), NULL, 16);
+    String hexData = r.substring(4, 16);
+
+    int pos = 16;
+    while (pos + 16 <= (int)r.length()) {
+      String frame = r.substring(pos, pos + 16);
+      if (frame.charAt(0) == '2') {
+        hexData += frame.substring(2);
+      }
+      pos += 16;
     }
-    int rawPress = parseUDSBits(resp2143, "6143", 134, 142);
-    if (rawPress >= 0) {
-      obdACPressure = rawPress * 0.1f;
-      Serial.printf("[ZOE] AC Pressure = %.1f bar (raw=%d)\n", obdACPressure,
-                    rawPress);
-    }
+
+    if ((int)hexData.length() > totalLen * 2)
+      hexData = hexData.substring(0, totalLen * 2);
+    return hexData;
   }
 
-  // =================================================================
-  // 6. Query 2144 – AC Compressor RPM (multi-frame!)
-  //    IH_ClimCompRPMStatus: bits 107-116, res 10
-  // =================================================================
-  String resp2144 = sendIsoTpRequest("2144", 5000);
-  Serial.printf("[OBD] 2144 IsoTP (%d chars): '%s'\n", resp2144.length(),
-                resp2144.c_str());
-  if (resp2144.indexOf("6144") >= 0) {
-    int raw = parseUDSBits(resp2144, "6144", 107, 116);
-    if (raw >= 0) {
-      obdACRpm = raw * 10;
-      Serial.printf("[ZOE] AC RPM = %.0f rpm (raw=%d)\n", obdACRpm, raw);
-    }
+  return "";
+}
+
+void ObdManager::processHvacStep() {
+  // If IDLE, start the HVAC sequence
+  if (hvacState == HVAC_IDLE) {
+    Serial.println("[OBD] HVAC state machine START");
+    hvacState = HVAC_SWITCH_SH;
+    lastOBDValue = "";
+    // Fall through to send the first command
   }
 
-  // 7. Restore normal ELM327 mode for EVC queries
-  sendATAndWait("ATS1");   // Spaces back on
-  sendATAndWait("ATCAF1"); // CAN Auto Formatting ON
-  sendATAndWait("ATST32"); // Normal timeout
+  // Check for DONE
+  if (hvacState == HVAC_DONE) {
+    Serial.println("[OBD] HVAC state machine DONE");
+    obdCurrentECU = 0;
+    hvacState = HVAC_IDLE;
+    lastOBDRxTime = millis();
+    DisplayManager::updateHomeOBD();
+    return;
+  }
 
-  // 8. Switch back to EVC
-  switchToECU("7E4", "7EC");
-  obdCurrentECU = 0;
+  unsigned long now = millis();
 
-  // 9. Update display with new data
-  lastOBDRxTime = millis();
-  DisplayManager::updateHomeOBD();
+  // Determine the timeout for the current state
+  unsigned long timeout;
+  if (hvacState >= HVAC_QUERY_2121 && hvacState <= HVAC_QUERY_2144) {
+    timeout = HVAC_ISOTP_TIMEOUT;
+  } else if (hvacState == HVAC_SESSION) {
+    timeout = 2000;
+  } else {
+    timeout = HVAC_AT_TIMEOUT;
+  }
 
-  Serial.println("[OBD] === HVAC blocking read DONE ===");
+  // If we already sent a command (hvacCmdSentTime > 0), wait for response
+  if (hvacCmdSentTime > 0) {
+    if (lastOBDValue.length() > 0) {
+      // Got a response — process it
+      String resp = lastOBDValue;
+      lastOBDValue = "";
+      hvacCmdSentTime = 0;
+
+      // Process response based on current state
+      switch (hvacState) {
+        case HVAC_QUERY_2121: {
+          String isotp = parseIsoTpResponse(resp);
+          Serial.printf("[OBD] HVAC 2121: '%s'\n", isotp.c_str());
+          if (isotp.indexOf("6121") >= 0) {
+            int rawCabin = parseUDSBits(isotp, "6121", 26, 35);
+            if (rawCabin >= 0) {
+              obdCabinTemp = (rawCabin * 0.1f) - 40.0f;
+              Serial.printf("[ZOE] Cabin Temp = %.1f C (raw=%d)\n", obdCabinTemp, rawCabin);
+            }
+          }
+          break;
+        }
+        case HVAC_QUERY_2143: {
+          String isotp = parseIsoTpResponse(resp);
+          Serial.printf("[OBD] HVAC 2143: '%s'\n", isotp.c_str());
+          if (isotp.indexOf("6143") >= 0) {
+            int rawExt = parseUDSBits(isotp, "6143", 110, 117);
+            if (rawExt >= 0) {
+              float extTemp = rawExt - 40.0f;
+              Serial.printf("[ZOE] External Temp = %.0f C\n", extTemp);
+            }
+            int rawPress = parseUDSBits(isotp, "6143", 134, 142);
+            if (rawPress >= 0) {
+              obdACPressure = rawPress * 0.1f;
+              Serial.printf("[ZOE] AC Pressure = %.1f bar\n", obdACPressure);
+            }
+          }
+          break;
+        }
+        case HVAC_QUERY_2144: {
+          String isotp = parseIsoTpResponse(resp);
+          Serial.printf("[OBD] HVAC 2144: '%s'\n", isotp.c_str());
+          if (isotp.indexOf("6144") >= 0) {
+            int raw = parseUDSBits(isotp, "6144", 107, 116);
+            if (raw >= 0) {
+              obdACRpm = raw * 10;
+              Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
+            }
+          }
+          break;
+        }
+        default:
+          // AT command responses (OK) — just consume and move on
+          break;
+      }
+
+      // Advance to next state
+      hvacState = (HvacPollState)(hvacState + 1);
+      // Will send the next command on the NEXT loop() call
+      return;
+
+    } else if (now - hvacCmdSentTime >= timeout) {
+      // Timeout — skip this step and advance
+      Serial.printf("[OBD] HVAC state %d timeout, advancing\n", hvacState);
+      hvacCmdSentTime = 0;
+      hvacState = (HvacPollState)(hvacState + 1);
+      return;
+    }
+    // Still waiting — return and let loop() continue (touch, display, etc.)
+    return;
+  }
+
+  // No command pending — send the command for the current state
+  lastOBDValue = "";
+  hvacCmdSentTime = now;
+
+  switch (hvacState) {
+    // Switch to HVAC ECU
+    case HVAC_SWITCH_SH:   sendCommand("ATSH744");      obdCurrentECU = 1; break;
+    case HVAC_SWITCH_CRA:  sendCommand("ATCRA764");     break;
+    case HVAC_SWITCH_FCSH: sendCommand("ATFCSH744");    break;
+    // Set raw mode
+    case HVAC_SET_ATS0:    sendCommand("ATS0");         break;
+    case HVAC_SET_ATCAF0:  sendCommand("ATCAF0");       break;
+    case HVAC_SET_ATAL:    sendCommand("ATAL");          break;
+    case HVAC_SET_FCSD:    sendCommand("ATFCSD300000"); break;
+    case HVAC_SET_FCSM:    sendCommand("ATFCSM1");      break;
+    case HVAC_SET_STFF:    sendCommand("ATSTFF");        break;
+    // Diagnostic session
+    case HVAC_SESSION: {
+      // Build ISO-TP single frame for 10C0
+      sendCommand("0210C0");
+      break;
+    }
+    // Data queries — send as ISO-TP single frames
+    case HVAC_QUERY_2121:  sendCommand("022121"); break;
+    case HVAC_QUERY_2143:  sendCommand("022143"); break;
+    case HVAC_QUERY_2144:  sendCommand("022144"); break;
+    // Restore normal mode
+    case HVAC_RESTORE_ATS1:   sendCommand("ATS1");   break;
+    case HVAC_RESTORE_ATCAF1: sendCommand("ATCAF1"); break;
+    case HVAC_RESTORE_ATST32: sendCommand("ATST32"); break;
+    // Switch back to EVC
+    case HVAC_BACK_SH:   sendCommand("ATSH7E4");   break;
+    case HVAC_BACK_CRA:  sendCommand("ATCRA7EC");  break;
+    case HVAC_BACK_FCSH: sendCommand("ATFCSH7E4"); break;
+    default:
+      hvacState = HVAC_DONE;
+      hvacCmdSentTime = 0;
+      break;
+  }
 }
 
 // ============================================================
-// Two-phase polling: EVC queries (async) → HVAC queries (blocking)
+// Two-phase polling: EVC queries (async) → HVAC queries (non-blocking SM)
 //
 // EVC queries use the normal async mechanism.
-// HVAC queries are done in a BLOCKING fashion to prevent
-// command collisions on multi-frame ISO-TP responses.
+// HVAC queries use a state machine (processHvacStep) that
+// sends one command per loop() iteration, keeping UI responsive.
 // ============================================================
 
-// Poll steps: 0=SOC, 1=SOH, 2=BatTemp, 3=HVAC(blocking), 4=12V
+// Poll steps: 0=SOC, 1=SOH, 2=BatTemp, 3=HVAC(state machine), 4=12V
 static const int POLL_STEPS = 5;
 
 void ObdManager::processPolling() {
   if (manualMode)
     return; // SKIP automatic polling if user is debugging via Web Console
+
+  // --- If HVAC state machine is active, it owns the OBD bus ---
+  if (hvacState != HVAC_IDLE) {
+    processHvacStep();
+    // Check if HVAC just finished
+    if (hvacState == HVAC_IDLE) {
+      // HVAC done, resume normal polling at next step
+      obdResponsePending = false;
+      obdPollIndex = (obdPollIndex) % POLL_STEPS; // Already incremented when HVAC started
+    }
+    return;
+  }
 
   bool shouldSendNext = false;
   unsigned long now = millis();
@@ -614,35 +730,6 @@ void ObdManager::processPolling() {
           Serial.printf("[ZOE] Bat Temp = %.0f°C\n", obdHVBatTemp);
         }
       }
-      // === HVAC responses (Service 21 → positive response 61) ===
-      else if (resp.indexOf("6144") >= 0 || resp.indexOf("61 44") >= 0) {
-        // AC RPM in 2144: bytes 13 and 14 (bits 104 to 119)
-        int raw = parseUDSBits(resp, "6144", 104, 119);
-        if (raw >= 0) {
-          obdACRpm = raw * 10;
-          Serial.printf("[ZOE] AC RPM = %.0f rpm\n", obdACRpm);
-        }
-      } else if (resp.indexOf("6143") >= 0 || resp.indexOf("61 43") >= 0) {
-        // In-Car Temp: bytes 13 and 14 (bits 104 to 119)
-        int rawCabin = parseUDSBits(resp, "6143", 104, 119);
-        if (rawCabin >= 0) {
-          obdCabinTemp = rawCabin / 10.0f;
-          Serial.printf("[ZOE] Cabin Temp = %.1f°C\n", obdCabinTemp);
-        }
-        // AC Pressure: bytes 16 and 17 (bits 128 to 143)
-        int rawPress = parseUDSBits(resp, "6143", 128, 143);
-        if (rawPress >= 0) {
-          obdACPressure = rawPress * 0.1f;
-          Serial.printf("[ZOE] AC Press = %.1f bar\n", obdACPressure);
-        }
-      } else if (resp.indexOf("6121") >= 0 || resp.indexOf("61 21") >= 0) {
-        // Hot Source Temp: bytes 12 and 13 (bits 96 to 111)
-        int rawHot = parseUDSBits(resp, "6121", 96, 111);
-        if (rawHot >= 0) {
-          float hotSourceTemp = rawHot / 100.0f;
-          Serial.printf("[ZOE] Hot Source Temp = %.2f°C\n", hotSourceTemp);
-        }
-      }
       // === General ===
       else if (resp.endsWith("V")) {
         obd12V = resp;
@@ -682,11 +769,14 @@ void ObdManager::processPolling() {
       case 2:
         sendCommand("222001");
         break; // Battery Rack Temp
-      // HVAC – fully blocking, no collision possible
+      // HVAC – non-blocking state machine
       case 3:
-        readHvacBlocking();
-        obdResponsePending = false; // Already processed
-        break;
+        hvacState = HVAC_SWITCH_SH; // Start HVAC state machine
+        hvacCmdSentTime = 0;
+        lastOBDValue = "";
+        obdPollIndex = 4; // Pre-set next step for when HVAC completes
+        processHvacStep(); // Kick off the first step immediately
+        return; // Don't fall through to obdPollIndex increment
       // General
       case 4:
         sendCommand("ATRV");

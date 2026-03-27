@@ -62,6 +62,12 @@ int obdPollIndex = 0;
 bool obdZoeMode = false;
 int obdCurrentECU = 0;  // 0=EVC, 1=HVAC
 
+// HVAC state machine
+HvacPollState hvacState = HVAC_IDLE;
+unsigned long hvacCmdSentTime = 0;
+const unsigned long HVAC_AT_TIMEOUT = 1000;    // 1s for AT commands
+const unsigned long HVAC_ISOTP_TIMEOUT = 5000; // 5s for IsoTP data queries
+
 CachedDevice btDevices[MAX_BLE_DEVICES];
 int btTotalDevices = 0;
 

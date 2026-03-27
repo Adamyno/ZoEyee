@@ -24,6 +24,37 @@ enum State {
   STATE_SLOT_PICKER   // New: Parameter selection overlay
 };
 
+// HVAC Polling State Machine (non-blocking)
+enum HvacPollState {
+  HVAC_IDLE = 0,
+  // Switch to HVAC ECU
+  HVAC_SWITCH_SH,       // ATSH744
+  HVAC_SWITCH_CRA,      // ATCRA764
+  HVAC_SWITCH_FCSH,     // ATFCSH744
+  // Set raw mode for multi-frame
+  HVAC_SET_ATS0,        // ATS0
+  HVAC_SET_ATCAF0,      // ATCAF0
+  HVAC_SET_ATAL,        // ATAL
+  HVAC_SET_FCSD,        // ATFCSD300000
+  HVAC_SET_FCSM,        // ATFCSM1
+  HVAC_SET_STFF,        // ATSTFF
+  // Open diagnostic session
+  HVAC_SESSION,         // 10C0
+  // Data queries
+  HVAC_QUERY_2121,      // Cabin temp
+  HVAC_QUERY_2143,      // External temp + AC pressure
+  HVAC_QUERY_2144,      // AC compressor RPM
+  // Restore normal mode
+  HVAC_RESTORE_ATS1,    // ATS1
+  HVAC_RESTORE_ATCAF1,  // ATCAF1
+  HVAC_RESTORE_ATST32,  // ATST32
+  // Switch back to EVC
+  HVAC_BACK_SH,         // ATSH7E4
+  HVAC_BACK_CRA,        // ATCRA7EC
+  HVAC_BACK_FCSH,       // ATFCSH7E4
+  HVAC_DONE
+};
+
 // Dashboard Slot configuration
 struct DashSlot {
   int paramIndex;     // Index into DisplayManager's parameter register
@@ -86,6 +117,12 @@ extern uint8_t btTargetType;
 extern int obdPollIndex;
 extern bool obdZoeMode;
 extern int obdCurrentECU;  // 0=EVC, 1=HVAC
+
+// HVAC state machine
+extern HvacPollState hvacState;
+extern unsigned long hvacCmdSentTime;
+extern const unsigned long HVAC_AT_TIMEOUT;
+extern const unsigned long HVAC_ISOTP_TIMEOUT;
 
 // Cached BLE Devices
 struct CachedDevice {

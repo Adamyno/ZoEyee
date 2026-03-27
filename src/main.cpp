@@ -27,6 +27,7 @@
 // =================================================================================
 // Bluetooth and OBD logics moved to BluetoothManager.cpp and ObdManager.cpp
 
+#ifndef PIO_UNIT_TESTING
 void setup(void) {
   Serial.begin(115200);
   pinMode(BTN_PIN, INPUT_PULLUP);
@@ -226,3 +227,4 @@ void loop() {
 
   delay(20);
 }
+#endif
