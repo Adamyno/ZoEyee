@@ -81,6 +81,7 @@ void TouchManager::processGestures() {
           pickerPage = currentPage;
           pickerSlotIndex = cellIdx;
           pickerScrollIndex = 0;
+          pickerJustOpened = true;
           currentState = STATE_SLOT_PICKER;
           DisplayManager::showSlotPicker();
           touching = false;  // consume the touch
@@ -138,6 +139,13 @@ void TouchManager::processGestures() {
       // === Slot Picker: independent handler (before horizontal swipe block) ===
       if (currentState == STATE_SLOT_PICKER) {
         int totalItems = 1 + MAX_DASH_PARAMS;
+        // Edge swipe back: start from left edge swipe right, or right edge swipe left
+        if ((startX < 30 && deltaX > 60) || (startX > 290 && deltaX < -60)) {
+          currentState = STATE_HOME;
+          DisplayManager::showHome();
+          touching = false;
+          return;
+        }
         // Swipe up/down to scroll picker (anywhere on screen)
         if (abs(deltaX) < 60 && abs(deltaY) > 25) {
           if (deltaY > 25 && pickerScrollIndex > 0) {
@@ -148,15 +156,14 @@ void TouchManager::processGestures() {
             DisplayManager::showSlotPicker(false);
           }
         }
-        // Tap to select item
+        // Tap to select item (fullscreen: itemH=57, startY=0)
         else if (abs(deltaX) < 20 && abs(deltaY) < 20 && tapDuration < 500) {
-          if (startY < 30 && startX < 40) {
-            // Back button
-            currentState = STATE_HOME;
-            DisplayManager::showHome();
-          } else if (startY >= 33) {
-            int itemH = 43;
-            int vis = (startY - 33) / itemH;
+          // Skip selection if picker just opened (finger still held from long-press)
+          if (pickerJustOpened) {
+            pickerJustOpened = false;
+          } else {
+            int itemH = 57;
+            int vis = startY / itemH;
             if (vis >= 0 && vis < 3) {
               int idx = pickerScrollIndex + vis;
               if (idx < totalItems) {

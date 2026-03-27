@@ -69,6 +69,7 @@ extern unsigned long pageSwipeTime;
 extern int pickerScrollIndex;
 extern int pickerSlotIndex;
 extern int pickerPage;
+extern bool pickerJustOpened;
 extern int currentSlotIndex; // For tracking which slot is being edited
 
 extern State currentState;

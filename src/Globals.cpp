@@ -19,6 +19,7 @@ unsigned long pageSwipeTime = 0;
 int pickerScrollIndex = 0;
 int pickerSlotIndex = 0;
 int pickerPage = 0;
+bool pickerJustOpened = false;
 int currentSlotIndex = 0;
 int menuIndex = 0;
 const int menuCount = 5;

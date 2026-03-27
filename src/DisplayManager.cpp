@@ -936,28 +936,17 @@ void DisplayManager::drawPageIndicator() {
 }
 
 void DisplayManager::showSlotPicker(bool fullRedraw) {
-  // Total items: EMPTY + DASH_PARAM_COUNT
   int totalItems = 1 + DASH_PARAM_COUNT;
-  int itemH = 43;
-  int startY = 33;
+  int itemH = 57;
+  int startY = 0;
   int currentParamIdx = dashPages[pickerPage][pickerSlotIndex].paramIndex;
 
   if (fullRedraw) {
     gfx->fillScreen(BLACK);
-    // Header
-    gfx->setFont(&FreeSans12pt7b);
-    gfx->setTextColor(YELLOW, BLACK);
-    gfx->setTextSize(1);
-    gfx->setCursor(60, 25);
-    gfx->print("SELECT MODULE");
-    gfx->drawLine(0, 30, 320, 30, WHITE);
-    // Back arrow (top left)
-    gfx->fillTriangle(5, 14, 15, 8, 15, 20, WHITE);
-    gfx->fillRect(15, 12, 6, 4, WHITE);
   }
 
-  // Clear items area only (below header)
-  gfx->fillRect(0, startY, 312, 172 - startY, BLACK);
+  // Clear items area
+  gfx->fillRect(0, startY, 314, 172, BLACK);
 
   for (int vis = 0; vis < 3; vis++) {
     int idx = pickerScrollIndex + vis;
@@ -965,51 +954,53 @@ void DisplayManager::showSlotPicker(bool fullRedraw) {
 
     int y0 = startY + vis * itemH;
 
-    // Highlight if this is the currently selected param
     bool isSelected = false;
     if (idx == 0 && currentParamIdx < 0) isSelected = true;
     if (idx > 0 && (idx - 1) == currentParamIdx) isSelected = true;
 
     if (isSelected) {
-      gfx->fillRect(0, y0, 312, itemH - 2, 0x0333);
+      gfx->fillRect(0, y0, 314, itemH - 1, 0x0333);
     }
 
     if (idx == 0) {
+      int icx = 28, icy = y0 + itemH / 2;
+      gfx->drawLine(icx - 8, icy - 8, icx + 8, icy + 8, 0x7BEF);
+      gfx->drawLine(icx - 8, icy + 8, icx + 8, icy - 8, 0x7BEF);
       gfx->setFont(&FreeSans12pt7b);
       gfx->setTextColor(0x7BEF, isSelected ? 0x0333 : BLACK);
       gfx->setTextSize(1);
-      gfx->setCursor(50, y0 + 28);
+      gfx->setCursor(55, y0 + itemH / 2 + 7);
       gfx->print("EMPTY");
     } else {
       int paramIdx = idx - 1;
       const DashParam &p = dashParams[paramIdx];
-      int iconCX = 22;
-      int iconCY = y0 + 20;
+      int iconCX = 28;
+      int iconCY = y0 + itemH / 2;
       if (p.drawIcon) {
         p.drawIcon(gfx, iconCX, iconCY, p.iconColor);
       }
       gfx->setFont(&FreeSans12pt7b);
       gfx->setTextColor(WHITE, isSelected ? 0x0333 : BLACK);
       gfx->setTextSize(1);
-      gfx->setCursor(50, y0 + 28);
+      gfx->setCursor(55, y0 + itemH / 2 + 7);
       gfx->print(p.fullName);
     }
 
     if (vis < 2) {
-      gfx->drawLine(0, y0 + itemH - 2, 312, y0 + itemH - 2, 0x2104);
+      gfx->drawLine(0, y0 + itemH - 1, 314, y0 + itemH - 1, 0x2104);
     }
   }
 
-  // Scroll indicator
+  // Scroll indicator (full height)
   if (totalItems > 3) {
-    int scrollBarH = 100;
-    int scrollBarY = 35;
-    gfx->fillRect(314, scrollBarY, 4, scrollBarH, 0x2104);
+    int scrollBarH = 160;
+    int scrollBarY = 6;
+    gfx->fillRect(316, scrollBarY, 4, scrollBarH, 0x2104);
     int handleH = (3 * scrollBarH) / totalItems;
-    if (handleH < 10) handleH = 10;
+    if (handleH < 12) handleH = 12;
     int maxScroll = totalItems - 3;
     if (maxScroll < 1) maxScroll = 1;
     int handleY = scrollBarY + (pickerScrollIndex * (scrollBarH - handleH)) / maxScroll;
-    gfx->fillRect(314, handleY, 4, handleH, 0x7BEF);
+    gfx->fillRect(316, handleY, 4, handleH, 0x7BEF);
   }
 }
