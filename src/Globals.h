@@ -84,6 +84,9 @@ extern int scanTime;
 extern NimBLEScan *pBLEScan;
 extern bool isBluetoothConnected;
 extern bool bleConnecting;
+extern TaskHandle_t btReconnectTaskHandle; // FreeRTOS task for non-blocking reconnect
+extern volatile bool btReconnectDone;      // true when task finishes
+extern volatile bool btReconnectResult;    // true if connect succeeded
 
 extern NimBLEClient *pClient;
 extern NimBLERemoteCharacteristic *pTxChar; // Write to OBD
@@ -157,6 +160,7 @@ extern int wifiCount;
 extern int wifiSelectedIndex;
 extern bool wifiAPActive;
 extern bool wifiAutoSave;
+extern bool wifiScanning; // true while async WiFi scan is in progress
 extern String wifiPassword;
 extern String wifiTargetSSID;
 extern unsigned long wifiTransitionTime;

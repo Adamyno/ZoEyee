@@ -10,5 +10,6 @@ public:
     static void showStatus();
     static bool connect(int deviceIndex);
     static bool connectByMAC(String mac);
+    static void startReconnectTask(String mac); // Non-blocking reconnect via FreeRTOS task
     static void disconnect();
 };

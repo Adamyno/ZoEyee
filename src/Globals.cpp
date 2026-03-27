@@ -30,6 +30,9 @@ int scanTime = 5;
 NimBLEScan *pBLEScan = nullptr;
 bool isBluetoothConnected = false;
 bool bleConnecting = false;
+TaskHandle_t btReconnectTaskHandle = nullptr;
+volatile bool btReconnectDone = false;
+volatile bool btReconnectResult = false;
 
 NimBLEClient *pClient = nullptr;
 NimBLERemoteCharacteristic *pTxChar = nullptr;
@@ -86,6 +89,7 @@ int wifiCount = 0;
 int wifiSelectedIndex = 0;
 bool wifiAPActive = false;
 bool wifiAutoSave = false;
+bool wifiScanning = false;
 String wifiPassword = "";
 String wifiTargetSSID = "";
 unsigned long wifiTransitionTime = 0;

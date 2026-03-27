@@ -246,21 +246,8 @@ void TouchManager::processGestures() {
               WiFi.mode(WIFI_STA);
               WiFi.disconnect();
               delay(100);
-              int n = WiFi.scanNetworks();
-              if (n < 0) {
-                wifiCount = 0;
-              } else {
-                wifiCount = min(n, MAX_WIFI_NETWORKS);
-              }
-              for (int i = 0; i < wifiCount; i++) {
-                wifiNetworks[i].ssid = WiFi.SSID(i);
-                wifiNetworks[i].rssi = WiFi.RSSI(i);
-                wifiNetworks[i].encrypted =
-                    (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
-              }
-              wifiSelectedIndex = 0;
-              currentState = STATE_WIFI_LIST;
-              WifiManager::showList();
+              WiFi.scanNetworks(true); // Async scan — results handled in loop()
+              wifiScanning = true;
             }
             // Save & Auto-Conn checkbox
             else if (startX >= 30 && startX <= 200 && startY >= 88 &&

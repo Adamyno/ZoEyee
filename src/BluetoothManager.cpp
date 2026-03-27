@@ -441,7 +441,8 @@ bool BluetoothManager::connectByMAC(String mac) {
       pClient->disconnect();
     NimBLEDevice::deleteClient(pClient);
     pClient = nullptr;
-    delay(200);
+    delay(200); // Safe: only runs when called from main loop (manual connect)
+                // When called from FreeRTOS task, delay() maps to vTaskDelay()
   }
 
   pClient = NimBLEDevice::createClient();
@@ -462,7 +463,7 @@ bool BluetoothManager::connectByMAC(String mac) {
   }
 
   Serial.println("[BLE] Fizikai kapcsolat sikeres! Várakozás a GATT felépülésre (1.5 mp)...");
-  delay(1500);
+  vTaskDelay(pdMS_TO_TICKS(1500)); // Yield CPU while waiting for GATT
 
   auto pServices = pClient->getServices(true);
   if (pServices.empty()) {
@@ -516,7 +517,7 @@ bool BluetoothManager::connectByMAC(String mac) {
 
   if (pRxChar->canNotify()) {
     pRxChar->subscribe(true, ObdManager::onBLENotify);
-    delay(200);
+    vTaskDelay(pdMS_TO_TICKS(200)); // Yield CPU
     NimBLERemoteDescriptor *p2902 = pRxChar->getDescriptor(NimBLEUUID((uint16_t)0x2902));
     if (p2902 != nullptr) {
       uint8_t notifyOn[] = {0x01, 0x00};
@@ -531,7 +532,7 @@ bool BluetoothManager::connectByMAC(String mac) {
   obdBuffer[0] = '\0';
   lastOBDValue = "";
 
-  delay(500);
+  vTaskDelay(pdMS_TO_TICKS(500)); // Yield CPU before OBD init
   
   if (!ObdManager::initOBD()) {
     disconnect();
@@ -558,4 +559,49 @@ void BluetoothManager::disconnect() {
   obdBufIndex = 0;
   obdBuffer[0] = '\0';
   Serial.println("[BLE] Sikeresen leválasztva az OBD-ről.");
+}
+
+// ============================================================
+// FreeRTOS task wrapper for non-blocking BLE reconnect.
+// Runs connectByMAC() in a background task so the main loop
+// can continue processing touch and display updates.
+// On ESP32-C6 (single core), vTaskDelay() yields CPU time.
+// ============================================================
+
+static String _reconnectMAC; // Task parameter (static to survive scope)
+
+static void btReconnectTaskFunc(void *pvParameters) {
+  String mac = _reconnectMAC;
+  Serial.printf("[BLE] Reconnect task started for [%s]\n", mac.c_str());
+  
+  bool result = BluetoothManager::connectByMAC(mac);
+  
+  btReconnectResult = result;
+  btReconnectDone = true;
+  btReconnectTaskHandle = nullptr;
+  
+  Serial.printf("[BLE] Reconnect task finished, result=%d\n", result);
+  vTaskDelete(NULL); // Self-delete
+}
+
+void BluetoothManager::startReconnectTask(String mac) {
+  // Don't start if already running
+  if (btReconnectTaskHandle != nullptr || bleConnecting) {
+    return;
+  }
+  
+  btReconnectDone = false;
+  btReconnectResult = false;
+  _reconnectMAC = mac;
+  
+  xTaskCreate(
+    btReconnectTaskFunc,      // Task function
+    "bt_reconn",              // Task name
+    4096,                     // Stack size (bytes)
+    NULL,                     // Parameters
+    1,                        // Priority (low, so main loop gets CPU)
+    &btReconnectTaskHandle    // Task handle
+  );
+  
+  Serial.println("[BLE] Reconnect task created");
 }

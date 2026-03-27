@@ -106,6 +106,32 @@ void loop() {
     }
   }
 
+  // Async WiFi scan completion handler
+  if (wifiScanning) {
+    int16_t scanResult = WiFi.scanComplete();
+    if (scanResult >= 0) {
+      // Scan finished
+      wifiScanning = false;
+      wifiCount = min((int)scanResult, MAX_WIFI_NETWORKS);
+      for (int i = 0; i < wifiCount; i++) {
+        wifiNetworks[i].ssid = WiFi.SSID(i);
+        wifiNetworks[i].rssi = WiFi.RSSI(i);
+        wifiNetworks[i].encrypted = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+      }
+      WiFi.scanDelete();
+      wifiSelectedIndex = 0;
+      currentState = STATE_WIFI_LIST;
+      WifiManager::showList();
+    } else if (scanResult == WIFI_SCAN_FAILED) {
+      // Scan failed
+      wifiScanning = false;
+      wifiCount = 0;
+      currentState = STATE_WIFI_LIST;
+      WifiManager::showList();
+    }
+    // else: WIFI_SCAN_RUNNING — still scanning, do nothing
+  }
+
   // Auto-scroll update for BT List
   if (currentState == STATE_BT_LIST && btTotalDevices > 0) {
     if (btDevices[btSelectedDeviceIndex].name.length() > 18) {
@@ -209,13 +235,27 @@ void loop() {
   }
 
   static unsigned long lastBtReconnectTime = 0;
-  if (currentState == STATE_HOME && !isBluetoothConnected && !bleConnecting && btTargetMAC.length() > 0) {
+  if (currentState == STATE_HOME && !isBluetoothConnected && !bleConnecting && btTargetMAC.length() > 0
+      && btReconnectTaskHandle == nullptr) {
     if (millis() - lastBtReconnectTime > 20000) {
         lastBtReconnectTime = millis();
-        // Force top bar update to RED before blocking connect function
         DisplayManager::drawTopBar(true); 
-        BluetoothManager::connectByMAC(btTargetMAC);
+        BluetoothManager::startReconnectTask(btTargetMAC); // Non-blocking!
     }
+  }
+
+  // Handle BT reconnect task completion
+  if (btReconnectDone) {
+    btReconnectDone = false;
+    if (btReconnectResult) {
+      Serial.println("[BLE] Auto-reconnect SUCCESS");
+      if (currentState == STATE_HOME) {
+        DisplayManager::showHome();
+      }
+    } else {
+      Serial.println("[BLE] Auto-reconnect FAILED");
+    }
+    DisplayManager::drawTopBar(true);
   }
   // ----------------------------
 
