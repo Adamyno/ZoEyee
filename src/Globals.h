@@ -99,7 +99,6 @@ extern int obdBufIndex;
 extern unsigned long lastOBDPollTime;
 extern unsigned long lastOBDRxTime;
 extern unsigned long lastOBDSentTime;
-extern bool obdHeartbeatLit;
 extern bool obdResponsePending;
 extern volatile bool bleDisconnectedFlag;
 extern const unsigned long OBD_NEXT_REQUEST_DELAY;

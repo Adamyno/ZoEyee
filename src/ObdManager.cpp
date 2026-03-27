@@ -706,8 +706,6 @@ void ObdManager::processPolling() {
     // --- Process any pending response FIRST ---
     if (lastOBDValue.length() > 0) {
       lastOBDRxTime = millis();
-      gfx->fillCircle(234, 10, 3, GREEN);
-      obdHeartbeatLit = true;
       lastOBDPollTime = millis();
 
       String resp = lastOBDValue;

@@ -259,12 +259,6 @@ void loop() {
   }
   // ----------------------------
 
-  // Heartbeat villogás takarítása
-  if (obdHeartbeatLit && millis() - lastOBDRxTime > 150) {
-    obdHeartbeatLit = false;
-    gfx->fillCircle(234, 10, 3, BLACK); // Eltüntetjük a zöld pöttyöt
-  }
-
   delay(20);
 }
 #endif

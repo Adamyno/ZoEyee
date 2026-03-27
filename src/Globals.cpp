@@ -44,7 +44,6 @@ int obdBufIndex = 0;
 unsigned long lastOBDPollTime = 0;
 unsigned long lastOBDRxTime = 0;
 unsigned long lastOBDSentTime = 0;
-bool obdHeartbeatLit = false;
 bool obdResponsePending = false;
 volatile bool bleDisconnectedFlag = false;
 const unsigned long OBD_NEXT_REQUEST_DELAY = 150;
