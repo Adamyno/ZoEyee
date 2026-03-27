@@ -811,6 +811,18 @@ void ObdManager::processPolling() {
       DisplayManager::updateHomeOBD();
     }
 
+    // --- Minimum 1-second poll cycle interval ---
+    // When starting a new cycle (pollIndex == 0), ensure at least 1s since last cycle start
+    if (obdPollIndex == 0 && pollCycleStartTime > 0) {
+      if (millis() - pollCycleStartTime < 1000) {
+        return;  // Wait until 1 second has passed
+      }
+    }
+    // Record cycle start time when beginning a new cycle
+    if (obdPollIndex == 0) {
+      pollCycleStartTime = millis();
+    }
+
     // --- Build the dynamic poll sequence ---
     // Phase 1: EVC params from pagePollList
     // Phase 2: HVAC (if needed)

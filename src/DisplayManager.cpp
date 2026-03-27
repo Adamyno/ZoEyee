@@ -949,8 +949,7 @@ void DisplayManager::showSlotPicker(bool fullRedraw) {
   gfx->fillRect(0, startY, 314, 172, BLACK);
 
   for (int vis = 0; vis < 3; vis++) {
-    int idx = pickerScrollIndex + vis;
-    if (idx >= totalItems) break;
+    int idx = (pickerScrollIndex + vis) % totalItems;
 
     int y0 = startY + vis * itemH;
 
@@ -991,16 +990,14 @@ void DisplayManager::showSlotPicker(bool fullRedraw) {
     }
   }
 
-  // Scroll indicator (full height)
+  // Scroll indicator (circular)
   if (totalItems > 3) {
     int scrollBarH = 160;
     int scrollBarY = 6;
     gfx->fillRect(316, scrollBarY, 4, scrollBarH, 0x2104);
     int handleH = (3 * scrollBarH) / totalItems;
     if (handleH < 12) handleH = 12;
-    int maxScroll = totalItems - 3;
-    if (maxScroll < 1) maxScroll = 1;
-    int handleY = scrollBarY + (pickerScrollIndex * (scrollBarH - handleH)) / maxScroll;
+    int handleY = scrollBarY + (pickerScrollIndex * (scrollBarH - handleH)) / totalItems;
     gfx->fillRect(316, handleY, 4, handleH, 0x7BEF);
   }
 }

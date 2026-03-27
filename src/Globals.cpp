@@ -72,6 +72,7 @@ String btTargetMAC = "";
 String btTargetName = "";
 uint8_t btTargetType = 0;
 int obdPollIndex = 0;
+unsigned long pollCycleStartTime = 0;
 bool obdZoeMode = false;
 int obdCurrentECU = 0;  // 0=EVC, 1=HVAC
 

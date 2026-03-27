@@ -273,8 +273,8 @@ void loop() {
   // Page indicator timeout
   if (currentState == STATE_HOME && pageSwipeTime > 0 && millis() - pageSwipeTime > 2000) {
     pageSwipeTime = 0;
-    // Clear indicator area
-    gfx->fillRect(0, 156, 320, 16, BLACK);
+    // Redraw home to restore cells under indicator
+    DisplayManager::showHome();
   }
 
   delay(20);

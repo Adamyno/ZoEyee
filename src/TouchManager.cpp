@@ -146,13 +146,13 @@ void TouchManager::processGestures() {
           touching = false;
           return;
         }
-        // Swipe up/down to scroll picker (anywhere on screen)
+        // Swipe up/down to scroll picker (circular, anywhere on screen)
         if (abs(deltaX) < 60 && abs(deltaY) > 25) {
-          if (deltaY > 25 && pickerScrollIndex > 0) {
-            pickerScrollIndex--;
+          if (deltaY > 25) {
+            pickerScrollIndex = (pickerScrollIndex - 1 + totalItems) % totalItems;
             DisplayManager::showSlotPicker(false);
-          } else if (deltaY < -25 && pickerScrollIndex < totalItems - 3) {
-            pickerScrollIndex++;
+          } else if (deltaY < -25) {
+            pickerScrollIndex = (pickerScrollIndex + 1) % totalItems;
             DisplayManager::showSlotPicker(false);
           }
         }
@@ -165,7 +165,7 @@ void TouchManager::processGestures() {
             int itemH = 57;
             int vis = startY / itemH;
             if (vis >= 0 && vis < 3) {
-              int idx = pickerScrollIndex + vis;
+              int idx = (pickerScrollIndex + vis) % totalItems;
               if (idx < totalItems) {
                 int newParamIdx = (idx == 0) ? EMPTY_SLOT : (idx - 1);
                 dashPages[pickerPage][pickerSlotIndex].paramIndex = newParamIdx;
@@ -201,6 +201,19 @@ void TouchManager::processGestures() {
           if (startY < 40 && startX < 80) {
             currentState = STATE_MENU;
             DisplayManager::drawMenu();
+          }
+          // Tap on left arrow (decrease pages)
+          else if (startX >= 50 && startX <= 90 && startY >= 85 && startY <= 135 && numPages > 1) {
+            numPages--;
+            if (currentPage >= numPages) currentPage = numPages - 1;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettings(false);
+          }
+          // Tap on right arrow (increase pages)
+          else if (startX >= 230 && startX <= 270 && startY >= 85 && startY <= 135 && numPages < MAX_PAGES) {
+            numPages++;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettings(false);
           }
         }
         touching = false;

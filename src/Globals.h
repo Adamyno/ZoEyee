@@ -126,6 +126,7 @@ extern String btTargetMAC;
 extern String btTargetName;
 extern uint8_t btTargetType;
 extern int obdPollIndex;
+extern unsigned long pollCycleStartTime;
 extern bool obdZoeMode;
 extern int obdCurrentECU;  // 0=EVC, 1=HVAC
 
