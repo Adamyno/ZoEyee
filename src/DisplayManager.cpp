@@ -1281,15 +1281,17 @@ void DisplayManager::showInfo() {
   gfx->setCursor(10, 65);
   gfx->printf("SW Version: %s", SW_VERSION);
 
-  // Flash: free space
+  // Flash: free / total
   uint32_t flashFree = ESP.getFreeSketchSpace() / 1024;
+  uint32_t flashTotal = (ESP.getSketchSize() + ESP.getFreeSketchSpace()) / 1024;
   gfx->setCursor(10, 95);
-  gfx->printf("Free Flash: %uKB", flashFree);
+  gfx->printf("Free Flash: %u / %uKB", flashFree, flashTotal);
 
-  // RAM: free heap
+  // RAM: free / total
   uint32_t heapFree = ESP.getFreeHeap() / 1024;
+  uint32_t heapTotal = ESP.getHeapSize() / 1024;
   gfx->setCursor(10, 125);
-  gfx->printf("Free RAM: %uKB", heapFree);
+  gfx->printf("Free RAM: %u / %uKB", heapFree, heapTotal);
 
   // Uptime
   unsigned long uptimeSec = millis() / 1000;
