@@ -631,31 +631,48 @@ static void drawIconClimateLoop(Arduino_GFX *g, int cx, int cy, uint16_t color) 
   }
 }
 
-// Lightning bolt icon (plain) for Max Charge Power
+// Lightning bolt icon for Max Charge Power (scaled version of battery bolt)
 static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Classic zigzag lightning bolt, centered
-  // Points form the lightning shape top-to-bottom:
-  //   top: cx-2, cy-18
-  //   zig right: cx+6, cy-6
-  //   narrow left: cx, cy-6
-  //   zig right: cx+8, cy+6
-  //   narrow left: cx+2, cy+6
-  //   bottom point: cx-4, cy+20
-  //   back up right: cx+2, cy+6  (close)
-  // Two triangles forming the shape:
-  g->fillTriangle(cx - 2, cy - 18, cx + 8, cy - 4, cx - 1, cy - 4, color);  // top half
-  g->fillTriangle(cx + 1, cy - 6,  cx + 10, cy - 6, cx - 4, cy + 20, color); // bottom half
-  g->fillRect(cx - 1, cy - 6, 9, 3, color); // bridge between halves
+  uint16_t bolt = 0xFFE0; // Yellow
+  // Upper part (scaled 1.5x from battery SOC bolt)
+  g->fillTriangle(cx + 6, cy - 18, cx - 3, cy - 18, cx - 9, cy, color);
+  g->fillTriangle(cx + 6, cy - 18, cx - 9, cy, cx + 3, cy, color);
+  // Lower part
+  g->fillTriangle(cx - 3, cy + 1, cx + 9, cy + 1, cx - 6, cy + 24, color);
+  // Fill the connection area between upper and lower
+  g->fillRect(cx - 6, cy - 2, 12, 6, color);
 }
 
-// Lightning bolt with "DC" text for DC Power
+// Dynamic Lightning + DC text + Arrow for DC Power
 static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  drawIconLightning(g, cx - 6, cy, color);
-  // Draw small "DC" text to the right
+  bool charging = (obdDCPower >= 0);
+  
+  uint16_t arrColor = charging ? 0x07E0 : 0xF800; // Green : Red
+  uint16_t txtColor = charging ? 0x87E0 : 0xFA08; // Light green : Light red
+  
+  // Tiny yellow bolt at the top (cy - 14)
+  uint16_t bolt = 0xFFE0;
+  int bx = cx, by = cy - 14;
+  g->fillTriangle(bx + 3, by - 6, bx - 1, by - 6, bx - 3, by, bolt);
+  g->fillTriangle(bx + 3, by - 6, bx - 3, by, bx + 1, by, bolt);
+  g->fillTriangle(bx - 1, by, bx + 3, by, bx - 2, by + 8, bolt);
+  g->fillRect(bx - 2, by - 1, 4, 3, bolt);
+
+  // Dynamic green down arrow (charging) or red up arrow (discharging) at the center (cy - 2)
+  int ax = cx, ay = cy - 2;
+  if (charging) {
+    g->fillRect(ax - 1, ay - 6, 3, 6, arrColor);
+    g->fillTriangle(ax - 4, ay, ax + 4, ay, ax, ay + 4, arrColor);
+  } else {
+    g->fillTriangle(ax - 4, ay - 2, ax + 4, ay - 2, ax, ay - 6, arrColor);
+    g->fillRect(ax - 1, ay - 2, 3, 6, arrColor);
+  }
+
+  // Dynamic colored "DC" text at the bottom (cy + 8)
   g->setFont(NULL); // default tiny font
   g->setTextSize(1);
-  g->setTextColor(0xBDF7); // light gray
-  g->setCursor(cx + 6, cy + 8);
+  g->setTextColor(txtColor);
+  g->setCursor(cx - 5, cy + 6);
   g->print("DC");
 }
 
@@ -700,7 +717,9 @@ static float getParamValue(int paramIndex) {
     case 11: return obdFanSpeed;
     case 12: return obdClimateLoopMode;
     case 13: return obdMaxChargePower;   // Max Charge Power in kW
-    case 14: return obdDCPower;          // DC Power in kW (V×A/1000)
+    case 14: 
+      if (obdDCPower <= -900) return -999;
+      return (obdDCPower < 0) ? -obdDCPower : obdDCPower; // Absolute value, icons indicate direction
     default: return -999;
   }
 }
