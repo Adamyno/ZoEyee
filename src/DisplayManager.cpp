@@ -428,10 +428,10 @@ static void drawIconBatteryThermo(Arduino_GFX *g, int cx, int cy, uint16_t color
   // Inner mercury (bright red)
   g->fillCircle(cx, cy + 14, 3, thInner);
   g->fillRect(cx - 1, cy - 5, 3, 17, thInner);
-  // Tick marks inside battery
-  g->drawLine(cx + 4, cy - 6, cx + 7, cy - 6, 0x7BEF);
-  g->drawLine(cx + 4, cy - 1, cx + 6, cy - 1, 0x7BEF);
-  g->drawLine(cx + 4, cy + 4, cx + 7, cy + 4, 0x7BEF);
+  // Tick marks inside battery (White)
+  g->drawLine(cx + 4, cy - 6, cx + 8, cy - 6, WHITE);
+  g->drawLine(cx + 4, cy - 1, cx + 7, cy - 1, WHITE);
+  g->drawLine(cx + 4, cy + 4, cx + 8, cy + 4, WHITE);
 }
 
 static void drawIconSnowflake(Arduino_GFX *g, int cx, int cy, uint16_t color) {
