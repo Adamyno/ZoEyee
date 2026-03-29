@@ -277,6 +277,13 @@ static uint16_t mapValueToColor(float value, const ColorStop *stops, int count) 
 
 static uint16_t colorWhite(float v) { return WHITE; }
 
+// DC Power color: green when charging (obdDCPower > 0), red when discharging
+static uint16_t colorDCPower(float v) {
+  (void)v; // value is always positive (abs), so we check the raw global
+  if (obdDCPower > 0) return 0x87E0; // Light green (charging/regen)
+  return 0xFA08; // Light red (discharging)
+}
+
 // Battery temp: <22 light blue, 22-32 green, 33-36 orange, 37+ red
 static uint16_t colorBatTemp(float v) {
   static const ColorStop stops[] = {
@@ -645,9 +652,9 @@ static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
 
 // Dynamic DC text + Large Arrow for DC Power
 static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Zoe conventionally uses negative current for charging (regen/plug-in)
-  // and positive current for discharging. At rest it often sits around -0.19kW.
-  bool charging = (obdDCPower < 0);
+  // Positive DC Power = energy flowing INTO battery (regen/charging) = green down
+  // Negative DC Power = energy flowing OUT of battery (driving/parasitic) = red up
+  bool charging = (obdDCPower > 0);
   
   uint16_t arrColor = charging ? 0x07E0 : 0xF800; // Green : Red
   uint16_t txtColor = charging ? 0x87E0 : 0xFA08; // Light green : Light red
@@ -705,7 +712,7 @@ static DashParam dashParams[] = {
   {"FAN",  "Engine Fan",     "%",  -99,  true,  0, 0x07FF, drawIconFan,            colorWhite,       1},
   {"",     "Climate Mode",   "",   -99,  false, 0, 0xB7FF, drawIconClimateLoop,    colorClimateLoopMode, 1},
   {"",     "Max Charge",     "kW", -1,   false, 1, 0xFFE0, drawIconLightning,      colorWhite,       3},
-  {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorWhite,       0},
+  {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorDCPower,     0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
