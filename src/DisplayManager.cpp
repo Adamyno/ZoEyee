@@ -732,6 +732,39 @@ static void drawIconBatteryKwh(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   }
 }
 
+// Dynamic battery icon for HV Voltage
+// <320V: empty, 320-350: 1 red bar, 350-380: 2 orange bars, >=380: 3 green bars
+static void drawIconBatteryHV(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Battery body (same dimensions as SOC icon), WHITE outline
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
+  // Battery terminal cap (top center)
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+
+  // Yellow lightning bolt inside (like SOC battery)
+  uint16_t bolt = 0xFFE0; // Yellow
+  g->fillTriangle(cx + 4, cy - 12, cx - 2, cy - 12, cx - 6, cy, bolt);
+  g->fillTriangle(cx + 4, cy - 12, cx - 6, cy, cx + 2, cy, bolt);
+  g->fillTriangle(cx - 2, cy + 1, cx + 6, cy + 1, cx - 4, cy + 16, bolt);
+  g->fillRect(cx - 4, cy - 1, 8, 4, bolt);
+
+  // Voltage indicator bar at very bottom of battery
+  int barX = bx + 4, barW = bw - 8;
+  float voltage = obdHVBatVoltage;
+  uint16_t barColor;
+  if (voltage >= 380.0f) {
+    barColor = 0x07E0; // Green
+  } else if (voltage >= 350.0f) {
+    barColor = 0xFD20; // Orange
+  } else if (voltage >= 320.0f) {
+    barColor = 0xF800; // Red
+  } else {
+    return; // No bar for < 320V
+  }
+  g->fillRect(barX, by + bh - 8, barW, 3, barColor);
+}
+
 static DashParam dashParams[] = {
   // label  fullName          unit   sentinel isInt dec color   drawIcon              getValueColor     ecuId
   {"SOH",  "Battery SOH",    "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite,       0},
@@ -750,6 +783,7 @@ static DashParam dashParams[] = {
   {"",     "Max Charge",     "kW", -1,   false, 1, 0xFFE0, drawIconLightning,      colorWhite,       3},
   {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorDCPower,     0},
   {"",     "Avail Energy",   "kWh",-1,   false, 1, 0x07E0, drawIconBatteryKwh,     colorWhite,       0},
+  {"",     "HV Voltage",     "V",  -1,   false, 1, 0xFFE0, drawIconBatteryHV,      colorWhite,       0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
@@ -778,6 +812,7 @@ static float getParamValue(int paramIndex) {
       if (obdDCPower <= -900) return -999;
       return (obdDCPower < 0) ? -obdDCPower : obdDCPower; // Absolute value, icons indicate direction
     case 15: return obdAvailEnergy;
+    case 16: return obdHVBatVoltage;
     default: return -999;
   }
 }
@@ -1034,6 +1069,25 @@ void DisplayManager::updateHomeOBD() {
       else if (obdAvailEnergy >= 3.0f) curLevel = 1;
       if (curLevel != prevBarLevel) {
         prevBarLevel = curLevel;
+        int cx = x0 + 22;
+        int cy = y0 + 26;
+        gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
+        const DashParam &p = dashParams[paramIdx];
+        if (p.drawIcon) {
+          p.drawIcon(gfx, cx, cy, p.iconColor);
+        }
+      }
+    }
+
+    // HV Voltage icon: redraw when voltage level changes
+    if (paramIdx == 16) {
+      static int prevVoltLevel = -1;
+      int curLevel = 0;
+      if (obdHVBatVoltage >= 380.0f) curLevel = 3;
+      else if (obdHVBatVoltage >= 350.0f) curLevel = 2;
+      else if (obdHVBatVoltage >= 320.0f) curLevel = 1;
+      if (curLevel != prevVoltLevel) {
+        prevVoltLevel = curLevel;
         int cx = x0 + 22;
         int cy = y0 + 26;
         gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
