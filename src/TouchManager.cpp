@@ -318,6 +318,18 @@ void TouchManager::processGestures() {
             }
           }
         }
+        // Vertical swipe → adjust interval
+        if (autoScrollEnabled && abs(deltaX) < 40 && abs(deltaY) > 30) {
+          if (deltaY > 30 && autoScrollInterval < 30) {
+            autoScrollInterval++;
+            preferences.putUChar("asinterv", autoScrollInterval);
+            DisplayManager::showSettingsAutoScroll(false);
+          } else if (deltaY < -30 && autoScrollInterval > 1) {
+            autoScrollInterval--;
+            preferences.putUChar("asinterv", autoScrollInterval);
+            DisplayManager::showSettingsAutoScroll(false);
+          }
+        }
         // Edge swipe back
         if (startX < 30 && deltaX < -60) {
           currentState = STATE_SETTINGS;
