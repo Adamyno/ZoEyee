@@ -696,19 +696,21 @@ static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) 
   g->print("DC");
 }
 
-// Battery icon with "kWh" text for Available Energy
+// Battery icon with green bars for Available Energy (same shape as SOC battery)
 static void drawIconBatteryKwh(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Battery body
-  g->drawRect(cx - 12, cy - 14, 24, 28, color);
-  g->drawRect(cx - 11, cy - 13, 22, 26, color);
-  // Battery cap
-  g->fillRect(cx - 5, cy - 18, 10, 5, color);
-  // "kWh" text inside the battery
-  g->setFont(NULL); // tiny pixel font
-  g->setTextSize(1);
-  g->setTextColor(color);
-  g->setCursor(cx - 9, cy - 3);
-  g->print("kWh");
+  // Battery body (same dimensions as SOC icon)
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, color);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, color);
+  // Battery terminal cap (top center)
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, color);
+  // 3 green charge bars inside battery body
+  uint16_t barColor = 0x07E0; // Green
+  int barX = bx + 4, barW = bw - 8, barH = 8, gap = 3;
+  int barStartY = by + bh - 5 - barH; // bottom bar
+  g->fillRect(barX, barStartY, barW, barH, barColor);
+  g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
+  g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
 }
 
 static DashParam dashParams[] = {
