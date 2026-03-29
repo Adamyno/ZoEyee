@@ -97,6 +97,7 @@ void setup(void) {
   NimBLEDevice::setOwnAddrType(
       BLE_OWN_ADDR_PUBLIC); // Fixált gyári MAC – Konnwei ne utasítsa el!
   
+  ObdManager::resetPollIndex();
   WebConsole::begin(); // Start the OBD diagnostic web server
   
   Serial.printf("[SYS] Setup Kész. Free heap: %d bytes\n", ESP.getFreeHeap());
@@ -273,8 +274,8 @@ void loop() {
   // Page indicator timeout
   if (currentState == STATE_HOME && pageSwipeTime > 0 && millis() - pageSwipeTime > 2000) {
     pageSwipeTime = 0;
-    // Redraw home to restore cells under indicator
-    DisplayManager::showHome();
+    // Only restore the bottom row cells under the indicator (no full redraw)
+    DisplayManager::restoreBottomRow();
   }
 
   delay(20);

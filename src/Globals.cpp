@@ -69,6 +69,11 @@ String obd12V = "";
 float obd12VFloat = -1;
 float obdCellVoltageMax = -1;
 float obdCellVoltageMin = -1;
+int   obdFanSpeed = -99;
+int   obdClimateLoopMode = -99;
+float obdMaxChargePower = -1;
+float obdInputPower = -1;
+float obdOutputPower = -1;
 
 String btTargetMAC = "";
 String btTargetName = "";
@@ -83,6 +88,10 @@ HvacPollState hvacState = HVAC_IDLE;
 unsigned long hvacCmdSentTime = 0;
 const unsigned long HVAC_AT_TIMEOUT = 1000;    // 1s for AT commands
 const unsigned long HVAC_ISOTP_TIMEOUT = 5000; // 5s for IsoTP data queries
+
+// LBC state machine
+LbcPollState lbcState = LBC_IDLE;
+unsigned long lbcCmdSentTime = 0;
 
 CachedDevice btDevices[MAX_BLE_DEVICES];
 int btTotalDevices = 0;

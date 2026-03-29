@@ -15,6 +15,7 @@ public:
     static void showSettings(bool fullRedraw = true);
     static void showSlotPicker(bool fullRedraw = true);
     static void drawPageIndicator();
+    static void restoreBottomRow();
     static void drawTopBar(bool softRefresh = false);
     static void drawStatusLED();
 };

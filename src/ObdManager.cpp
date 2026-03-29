@@ -599,6 +599,18 @@ void ObdManager::processHvacStep() {
           }
           break;
         }
+        case HVAC_QUERY_2167: {
+          String isotp = parseIsoTpResponse(resp);
+          Serial.printf("[OBD] HVAC 2167: '%s'\n", isotp.c_str());
+          if (isotp.indexOf("6167") >= 0) {
+            int raw = parseUDSBits(isotp, "6167", 21, 23);
+            if (raw >= 0) {
+              obdClimateLoopMode = raw;
+              Serial.printf("[ZOE] Climate Loop Mode = %d\n", obdClimateLoopMode);
+            }
+          }
+          break;
+        }
         default:
           // AT command responses (OK) — just consume and move on
           break;
@@ -646,6 +658,7 @@ void ObdManager::processHvacStep() {
     case HVAC_QUERY_2121:  sendCommand("022121"); break;
     case HVAC_QUERY_2143:  sendCommand("022143"); break;
     case HVAC_QUERY_2144:  sendCommand("022144"); break;
+    case HVAC_QUERY_2167:  sendCommand("022167"); break;
     // Restore normal mode
     case HVAC_RESTORE_ATS1:   sendCommand("ATS1");   break;
     case HVAC_RESTORE_ATCAF1: sendCommand("ATCAF1"); break;
@@ -662,6 +675,140 @@ void ObdManager::processHvacStep() {
 }
 
 // ============================================================
+// Non-blocking LBC state machine.
+// Each call processes ONE step: either sends a command or
+// checks for a response. Cell voltages via 2103 ISO-TP.
+// ============================================================
+
+void ObdManager::processLbcStep() {
+  if (lbcState == LBC_IDLE) {
+    Serial.println("[OBD] LBC state machine START");
+    lbcState = LBC_SWITCH_SH;
+    lastOBDValue = "";
+  }
+
+  if (lbcState == LBC_DONE) {
+    Serial.println("[OBD] LBC state machine DONE");
+    obdCurrentECU = -1; // Force re-switch next time
+    lbcState = LBC_IDLE;
+    lastOBDRxTime = millis();
+    DisplayManager::updateHomeOBD();
+    return;
+  }
+
+  unsigned long now = millis();
+
+  // Determine timeout for the current state
+  unsigned long timeout;
+  if (lbcState == LBC_QUERY_2103 || lbcState == LBC_QUERY_2101) {
+    timeout = HVAC_ISOTP_TIMEOUT;  // 5s for multi-frame data
+  } else if (lbcState == LBC_SESSION) {
+    timeout = 2000;
+  } else {
+    timeout = HVAC_AT_TIMEOUT;  // 1s for AT commands
+  }
+
+  // If we already sent a command, wait for response
+  if (lbcCmdSentTime > 0) {
+    if (lastOBDValue.length() > 0) {
+      // Got a response
+      String resp = lastOBDValue;
+      lastOBDValue = "";
+      lbcCmdSentTime = 0;
+
+      // Process response based on current state
+      if (lbcState == LBC_QUERY_2101) {
+        String isotp = parseIsoTpResponse(resp);
+        Serial.printf("[OBD] LBC 2101: '%s'\n", isotp.c_str());
+        if (isotp.indexOf("6101") >= 0) {
+          // Max Charge Power: bits 336-351, multiplier 0.01
+          int rawMaxChg = parseUDSBits(isotp, "6101", 336, 351);
+          if (rawMaxChg >= 0) {
+            obdMaxChargePower = rawMaxChg * 0.01f;
+            Serial.printf("[ZOE] Max Charge Power = %.2f kW\n", obdMaxChargePower);
+          }
+          // Input Power (charge/regen): bits 176-191, multiplier 0.01
+          int rawInPwr = parseUDSBits(isotp, "6101", 176, 191);
+          if (rawInPwr >= 0) {
+            obdInputPower = rawInPwr * 0.01f;
+            Serial.printf("[ZOE] Input Power = %.2f kW\n", obdInputPower);
+          }
+          // Output Power (discharge): bits 192-207, multiplier 0.01
+          int rawOutPwr = parseUDSBits(isotp, "6101", 192, 207);
+          if (rawOutPwr >= 0) {
+            obdOutputPower = rawOutPwr * 0.01f;
+            Serial.printf("[ZOE] Output Power = %.2f kW\n", obdOutputPower);
+          }
+          lastOBDRxTime = millis();
+          lastOBDPollTime = millis();
+        } else {
+          Serial.println("[OBD] LBC 2101 failed.");
+        }
+      } else if (lbcState == LBC_QUERY_2103) {
+        String isotp = parseIsoTpResponse(resp);
+        Serial.printf("[OBD] LBC 2103: '%s'\n", isotp.c_str());
+        if (isotp.indexOf("6103") >= 0) {
+          int rawMax = parseUDSBits(isotp, "6103", 96, 111);
+          if (rawMax >= 0) {
+            obdCellVoltageMax = rawMax * 0.01f;
+            Serial.printf("[ZOE] Cell V Max = %.3f V\n", obdCellVoltageMax);
+          }
+          int rawMin = parseUDSBits(isotp, "6103", 112, 127);
+          if (rawMin >= 0) {
+            obdCellVoltageMin = rawMin * 0.01f;
+            Serial.printf("[ZOE] Cell V Min = %.3f V\n", obdCellVoltageMin);
+          }
+          lastOBDRxTime = millis();
+          lastOBDPollTime = millis();
+        } else {
+          Serial.println("[OBD] LBC 2103 failed.");
+        }
+      }
+
+      // Advance to next state
+      lbcState = (LbcPollState)(lbcState + 1);
+      return;
+
+    } else if (now - lbcCmdSentTime >= timeout) {
+      Serial.printf("[OBD] LBC state %d timeout, advancing\n", lbcState);
+      lbcCmdSentTime = 0;
+      lbcState = (LbcPollState)(lbcState + 1);
+      return;
+    }
+    // Still waiting
+    return;
+  }
+
+  // No command pending — send the command for the current state
+  lastOBDValue = "";
+  lbcCmdSentTime = now;
+
+  switch (lbcState) {
+    // Switch to LBC ECU
+    case LBC_SWITCH_SH:      sendCommand("ATSH79B");     obdCurrentECU = 2; break;
+    case LBC_SWITCH_CRA:     sendCommand("ATCRA7BB");    break;
+    case LBC_SWITCH_FCSH:    sendCommand("ATFCSH79B");   break;
+    // Extended diagnostic session
+    case LBC_SESSION:        sendCommand("0210C0");      break;
+    // Set raw mode for multi-frame
+    case LBC_SET_ATS0:       sendCommand("ATS0");        break;
+    case LBC_SET_ATCAF0:     sendCommand("ATCAF0");      break;
+    case LBC_SET_ATAL:       sendCommand("ATAL");         break;
+    // Data queries
+    case LBC_QUERY_2101:     sendCommand("022101");      break;
+    case LBC_QUERY_2103:     sendCommand("022103");      break;
+    // Restore normal mode
+    case LBC_RESTORE_ATS1:   sendCommand("ATS1");        break;
+    case LBC_RESTORE_ATCAF1: sendCommand("ATCAF1");      break;
+    case LBC_RESTORE_ATST32: sendCommand("ATST32");      break;
+    default:
+      lbcState = LBC_DONE;
+      lbcCmdSentTime = 0;
+      break;
+  }
+}
+
+// ============================================================
 // Page-aware polling: only query parameters on the current page.
 // Poll list is built dynamically from dashPages[currentPage].
 // ============================================================
@@ -671,11 +818,13 @@ static int pagePollList[6] = {-1, -1, -1, -1, -1, -1};
 static int pagePollCount = 0;
 static bool pageNeedsHVAC = false;  // true if any HVAC param is on page
 static bool pageNeedsEVC = false;   // true if any EVC param is on page
+static bool pageNeedsLBC = false;   // true if any LBC param (cell voltages) is on page
 
 // Which HVAC queries are needed on this page
 static bool needHvac2121 = false; // Cabin temp (param 2)
 static bool needHvac2143 = false; // AC Pressure (param 5)
 static bool needHvac2144 = false; // AC RPM (param 4)
+static bool needHvac2167 = false; // Climate Loop Mode (param 12)
 
 void ObdManager::resetPollIndex() {
   obdPollIndex = 0;
@@ -688,9 +837,11 @@ void ObdManager::buildPollList() {
   pagePollCount = 0;
   pageNeedsHVAC = false;
   pageNeedsEVC = false;
+  pageNeedsLBC = false;
   needHvac2121 = false;
   needHvac2143 = false;
   needHvac2144 = false;
+  needHvac2167 = false;
 
   for (int i = 0; i < 6; i++) {
     int paramIdx = dashPages[currentPage][i].paramIndex;
@@ -706,11 +857,13 @@ void ObdManager::buildPollList() {
     pagePollList[pagePollCount++] = paramIdx;
 
     // Track ECU needs
-    // ECU mapping: params 0,1,3 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
-    if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3 || paramIdx == 8) pageNeedsEVC = true;
+    // ECU mapping: params 0,1,3,11 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
+    if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3 || paramIdx == 11) pageNeedsEVC = true;
+    if (paramIdx == 8 || paramIdx == 9 || paramIdx == 10 || paramIdx == 13 || paramIdx == 14 || paramIdx == 15) pageNeedsLBC = true;
     if (paramIdx == 2) { pageNeedsHVAC = true; needHvac2121 = true; }
     if (paramIdx == 4) { pageNeedsHVAC = true; needHvac2144 = true; }
     if (paramIdx == 5 || paramIdx == 7) { pageNeedsHVAC = true; needHvac2143 = true; }
+    if (paramIdx == 12) { pageNeedsHVAC = true; needHvac2167 = true; }
   }
 
   obdPollIndex = 0;
@@ -725,7 +878,7 @@ static const char* getEvcCommand(int paramIdx) {
     case 0: return "223206"; // SOH
     case 1: return "222002"; // SOC
     case 3: return "222001"; // Battery Temp
-    case 8: return "229007"; // Max Cell Voltage (first of 2 queries for delta)
+    case 11: return "223471"; // Fan Speed
     default: return nullptr;
   }
 }
@@ -735,11 +888,6 @@ static const char* getEvcCommand(int paramIdx) {
 
 void ObdManager::processPolling() {
   if (manualMode) return;
-
-  // If poll list is empty, build it
-  if (pagePollCount == 0 && currentState == STATE_HOME) {
-    buildPollList();
-  }
   // Nothing to poll on this page
   if (pagePollCount == 0 && !pageNeedsHVAC) return;
 
@@ -748,7 +896,15 @@ void ObdManager::processPolling() {
     processHvacStep();
     if (hvacState == HVAC_IDLE) {
       obdResponsePending = false;
-      // After HVAC done, continue with next poll step
+    }
+    return;
+  }
+
+  // --- If LBC state machine is active, it owns the OBD bus ---
+  if (lbcState != LBC_IDLE) {
+    processLbcStep();
+    if (lbcState == LBC_IDLE) {
+      obdResponsePending = false;
     }
     return;
   }
@@ -796,25 +952,32 @@ void ObdManager::processPolling() {
           obdHVBatTemp = raw - 40;
           Serial.printf("[ZOE] Bat Temp = %.0f\u00b0C\n", obdHVBatTemp);
         }
-      } else if (resp.indexOf("629007") >= 0 || resp.indexOf("62 90 07") >= 0) {
-        int raw = parseUDSHex(resp, "629007", 2);
+      } else if (resp.indexOf("623471") >= 0 || resp.indexOf("62 34 71") >= 0) {
+        int raw = parseUDSHex(resp, "623471", 1);
         if (raw >= 0) {
-          obdCellVoltageMax = raw * 0.000976563f;
+          obdFanSpeed = raw * 5;
+          Serial.printf("[ZOE] Engine Fan = %d%%\n", obdFanSpeed);
+        }
+      } else if (resp.indexOf("621417") >= 0 || resp.indexOf("62 14 17") >= 0) {
+        int raw = parseUDSHex(resp, "621417", 2);
+        if (raw >= 0) {
+          obdCellVoltageMax = raw * 0.001f;
           Serial.printf("[ZOE] Cell V Max = %.3f V\n", obdCellVoltageMax);
         }
-      } else if (resp.indexOf("629009") >= 0 || resp.indexOf("62 90 09") >= 0) {
-        int raw = parseUDSHex(resp, "629009", 2);
+      } else if (resp.indexOf("621419") >= 0 || resp.indexOf("62 14 19") >= 0) {
+        int raw = parseUDSHex(resp, "621419", 2);
         if (raw >= 0) {
-          obdCellVoltageMin = raw * 0.000976563f;
+          obdCellVoltageMin = raw * 0.001f;
           Serial.printf("[ZOE] Cell V Min = %.3f V\n", obdCellVoltageMin);
         }
-      } else if (resp.endsWith("V")) {
-        obd12V = resp;
-        // Parse float from "12.4V" style string
+      } else if (resp.indexOf("V") >= 0 && resp.indexOf("62") < 0 && resp.indexOf("7F") < 0) {
+        // ATRV response: "12.4V" or "13.3V OK"
         String numStr = resp;
-        numStr.replace("V", "");
+        int vIdx = numStr.indexOf('V');
+        if (vIdx > 0) numStr = numStr.substring(0, vIdx);
         numStr.trim();
         obd12VFloat = numStr.toFloat();
+        obd12V = numStr + "V";
         Serial.printf("[ZOE] 12V = %s (%.1f)\n", obd12V.c_str(), obd12VFloat);
       } else if (resp.indexOf("NO DATA") >= 0 || resp.indexOf("ERROR") >= 0 ||
                  resp.indexOf("7F") >= 0) {
@@ -845,35 +1008,37 @@ void ObdManager::processPolling() {
     int evcCount = 0;
     for (int i = 0; i < pagePollCount; i++) {
       int p = pagePollList[i];
-      if (p == 0 || p == 1 || p == 3 || p == 8) evcCount++;
+      if (p == 0 || p == 1 || p == 3 || p == 11) evcCount++;
     }
-    // If param 8 (cell delta) is in the list, add an extra EVC step for min cell voltage query
-    bool needsCellMin = false;
-    for (int i = 0; i < pagePollCount; i++) {
-      if (pagePollList[i] == 8) { needsCellMin = true; break; }
+    
+    // Count LBC params
+    int lbcCount = 0;
+    if (pageNeedsLBC) {
+      lbcCount = 1; // Always poll both Max and Min together via 2103
     }
-    if (needsCellMin) evcCount++; // extra step for 229009
-    int hvacStep = evcCount; // poll index where HVAC starts
+    
+    int hvacStep = evcCount + lbcCount; // poll index where HVAC starts
     int atrvStep = hvacStep + (pageNeedsHVAC ? 1 : 0); // ATRV after HVAC
     int totalSteps = atrvStep + 1;
-
-    // ECU switching
-    if (obdZoeMode && obdPollIndex < evcCount && obdCurrentECU != 0) {
-      Serial.println("[OBD] Switching to EVC (7E4/7EC)...");
-      switchToECU("7E4", "7EC");
-      obdCurrentECU = 0;
-    }
 
     lastOBDSentTime = millis();
     obdResponsePending = true;
 
     if (obdZoeMode) {
       if (obdPollIndex < evcCount) {
+        // --- EVC Phase ---
+        if (obdCurrentECU != 0) {
+          Serial.println("[OBD] Switching to EVC (7E4/7EC)...");
+          switchToECU("7E4", "7EC");
+          sendAndWaitResponse("10C0", 500);
+          obdCurrentECU = 0;
+        }
+        
         // Find the nth EVC param
         int evcIdx = 0;
         for (int i = 0; i < pagePollCount; i++) {
           int p = pagePollList[i];
-          if (p == 0 || p == 1 || p == 3 || p == 8) {
+          if (p == 0 || p == 1 || p == 3 || p == 11) {
             if (evcIdx == obdPollIndex) {
               const char *cmd = getEvcCommand(p);
               if (cmd) sendCommand(cmd);
@@ -882,10 +1047,14 @@ void ObdManager::processPolling() {
             evcIdx++;
           }
         }
-        // Check if this is the extra cell min voltage step
-        if (evcIdx == 0 && needsCellMin && obdPollIndex == evcCount - 1) {
-          sendCommand("229009"); // Min Cell Voltage
-        }
+      } else if (obdPollIndex < evcCount + lbcCount) {
+        // --- LBC Phase (Non-blocking state machine) ---
+        lbcState = LBC_SWITCH_SH;
+        lbcCmdSentTime = 0;
+        lastOBDValue = "";
+        processLbcStep();
+        obdPollIndex++;
+        return;
       } else if (obdPollIndex == hvacStep && pageNeedsHVAC) {
         // Start HVAC state machine
         hvacState = HVAC_SWITCH_SH;

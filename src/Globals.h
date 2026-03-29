@@ -45,6 +45,7 @@ enum HvacPollState {
   HVAC_QUERY_2121,      // Cabin temp
   HVAC_QUERY_2143,      // External temp + AC pressure
   HVAC_QUERY_2144,      // AC compressor RPM
+  HVAC_QUERY_2167,      // Climate Loop Mode
   // Restore normal mode
   HVAC_RESTORE_ATS1,    // ATS1
   HVAC_RESTORE_ATCAF1,  // ATCAF1
@@ -56,12 +57,35 @@ enum HvacPollState {
   HVAC_DONE
 };
 
+// LBC Polling State Machine (non-blocking, for 2103 cell voltage query)
+enum LbcPollState {
+  LBC_IDLE = 0,
+  // Switch to LBC ECU
+  LBC_SWITCH_SH,        // ATSH79B
+  LBC_SWITCH_CRA,       // ATCRA7BB
+  LBC_SWITCH_FCSH,      // ATFCSH79B
+  // Open extended diagnostic session
+  LBC_SESSION,          // 10C0 (as ISO-TP: 0210C0)
+  // Set raw mode for multi-frame
+  LBC_SET_ATS0,         // ATS0
+  LBC_SET_ATCAF0,       // ATCAF0
+  LBC_SET_ATAL,         // ATAL
+  // Data queries
+  LBC_QUERY_2101,       // 022101 (Max charge, input/output power)
+  LBC_QUERY_2103,       // 022103 (Max & Min cell voltage)
+  // Restore normal mode
+  LBC_RESTORE_ATS1,     // ATS1
+  LBC_RESTORE_ATCAF1,   // ATCAF1
+  LBC_RESTORE_ATST32,   // ATST32
+  LBC_DONE
+};
+
 // Dashboard Slot configuration
 struct DashSlot {
   int paramIndex;     // Index into DisplayManager's parameter register
 };
 
-#define MAX_DASH_PARAMS 9
+#define MAX_DASH_PARAMS 16
 extern DashSlot dashPages[MAX_PAGES][6];
 extern int currentPage;
 extern int numPages;
@@ -123,6 +147,11 @@ extern String obd12V;
 extern float obd12VFloat;
 extern float obdCellVoltageMax;
 extern float obdCellVoltageMin;
+extern int   obdFanSpeed;
+extern int   obdClimateLoopMode;
+extern float obdMaxChargePower;
+extern float obdInputPower;
+extern float obdOutputPower;
 
 extern String btTargetMAC;
 extern String btTargetName;
@@ -137,6 +166,10 @@ extern HvacPollState hvacState;
 extern unsigned long hvacCmdSentTime;
 extern const unsigned long HVAC_AT_TIMEOUT;
 extern const unsigned long HVAC_ISOTP_TIMEOUT;
+
+// LBC state machine
+extern LbcPollState lbcState;
+extern unsigned long lbcCmdSentTime;
 
 // Cached BLE Devices
 struct CachedDevice {

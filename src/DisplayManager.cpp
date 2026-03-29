@@ -291,22 +291,15 @@ static uint16_t colorBatTemp(float v) {
   return mapValueToColor(v, stops, 7);
 }
 
-// AC RPM: 0-900 d-green, 900-1400 l-green, 1500-3500 blue, 3500-4500 orange, 4500-6500 red, 6500+ purple
 static uint16_t colorACRpm(float v) {
   static const ColorStop stops[] = {
-    {0.0f,    0x03A0},   // dark green
-    {900.0f,  0x03A0},   // dark green
-    {1200.0f, 0x07E0},   // light green
-    {1400.0f, 0x07E0},   // light green
-    {1600.0f, 0xAEFF},   // blue start
-    {3400.0f, 0xAEFF},   // blue end
-    {3600.0f, 0xFD20},   // orange start
-    {4400.0f, 0xFD20},   // orange end
-    {4600.0f, 0xF800},   // red start
-    {6200.0f, 0xF800},   // red end
-    {6600.0f, 0xD01F},   // purple start
+    {   0.0f, 0x07E0}, // Green
+    {2500.0f, 0xFD20}, // Orange
+    {5000.0f, 0xF800}, // Red
+    {7000.0f, 0xD01F}, // Purple
   };
-  return mapValueToColor(v, stops, 11);
+  // Automatically creates a smooth continuous transition (gradient) between the stops!
+  return mapValueToColor(v, stops, 4);
 }
 
 // AC Pressure: <7 red, 7-10 orange, 10-15 green, 15-18 light blue, 18+ purple
@@ -323,6 +316,13 @@ static uint16_t colorACPressure(float v) {
     {20.0f, 0xD01F},   // purple
   };
   return mapValueToColor(v, stops, 9);
+}
+
+static uint16_t colorClimateLoopMode(float v) {
+  int mode = (int)v;
+  if (mode == 1 || mode == 2) return 0x07FF; // CYAN/BLUE for COOL AC mode
+  if (mode == 4) return 0xF800;              // RED for HEAT Pump mode
+  return 0xFFFF;                             // WHITE for None / Idle
 }
 
 // ============================================================
@@ -554,6 +554,112 @@ static void drawIconCellDelta(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->fillRect(cx + 2, cy - 3, 5, 12, dnColor);
 }
 
+static void drawIconCellMax(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Battery outline
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+  // Green fill inside battery
+  g->fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 2, 0x03A0); // dark green fill
+  // "MAX" text rotated 90° inside battery (FreeSans9pt7b, white)
+  g->setRotation(0);
+  g->setFont(&FreeSans9pt7b);
+  g->setTextColor(WHITE);
+  g->setTextSize(1);
+  // In rotation 0: x_portrait = 171 - y_landscape, y_portrait = x_landscape
+  g->setCursor(171 - (cy + 22), cx + 6);
+  g->print("MAX");
+  g->setRotation(1);
+}
+
+static void drawIconCellMin(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Battery outline
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+  // Red fill inside battery
+  g->fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 2, 0x7800); // dark red fill
+  // "MIN" text rotated 90° inside battery (FreeSans9pt7b, white)
+  g->setRotation(0);
+  g->setFont(&FreeSans9pt7b);
+  g->setTextColor(WHITE);
+  g->setTextSize(1);
+  g->setCursor(171 - (cy + 21), cx + 6);
+  g->print("MIN");
+  g->setRotation(1);
+}
+static void drawIconFan(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  g->drawCircle(cx, cy, 14, color);
+  g->drawCircle(cx, cy, 13, color);
+  g->fillCircle(cx, cy, 3, color);
+  for (int i = 0; i < 3; i++) {
+    float a = (i * 120 + 30) * 3.14159f / 180.0f;
+    float a2 = (i * 120 + 90) * 3.14159f / 180.0f;
+    int fx1 = cx + (int)(3 * cos(a));
+    int fy1 = cy + (int)(3 * sin(a));
+    int fx2 = cx + (int)(12 * cos(a));
+    int fy2 = cy + (int)(12 * sin(a));
+    int fx3 = cx + (int)(12 * cos(a2));
+    int fy3 = cy + (int)(12 * sin(a2));
+    g->fillTriangle(fx1, fy1, fx2, fy2, fx3, fy3, color);
+  }
+}
+
+static void drawIconClimateLoop(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Outer double-arrow circle (recycle/loop symbol)
+  g->drawCircle(cx, cy, 14, color);
+  g->drawCircle(cx, cy, 15, color);
+  // Draw two arrow heads
+  g->fillTriangle(cx - 14, cy, cx - 20, cy - 5, cx - 8, cy - 5, color);
+  g->fillTriangle(cx + 14, cy, cx + 8, cy + 5, cx + 20, cy + 5, color);
+  
+  // Draw scaled-down snowflake inside the circle (max branch size = 9)
+  for (int a = 0; a < 6; a++) {
+    float angle = a * 3.14159f / 3.0f;
+    int ex = cx + (int)(9 * cos(angle));
+    int ey = cy + (int)(9 * sin(angle));
+    g->drawLine(cx, cy, ex, ey, color);
+    // Crystal branches
+    float bA1 = angle + 0.60f;
+    float bA2 = angle - 0.60f;
+    int mx = cx + (int)(5 * cos(angle));
+    int my = cy + (int)(5 * sin(angle));
+    g->drawLine(mx, my, mx + (int)(4 * cos(bA1)), my + (int)(4 * sin(bA1)), color);
+    g->drawLine(mx, my, mx + (int)(4 * cos(bA2)), my + (int)(4 * sin(bA2)), color);
+  }
+}
+
+// Lightning bolt icon (plain) for Max Charge Power
+static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Large lightning bolt shape
+  int x0 = cx - 6, y0 = cy - 20;
+  g->fillTriangle(x0, y0 + 18, x0 + 14, y0, x0 + 8, y0 + 18, color);
+  g->fillTriangle(x0 + 4, y0 + 16, x0 + 18, y0 + 16, x0 + 12, y0 + 38, color);
+  g->fillRect(x0 + 5, y0 + 16, 8, 4, color);
+}
+
+// Lightning bolt with downward green arrow (Input/Charge power)
+static void drawIconLightningIn(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  drawIconLightning(g, cx, cy, color);
+  // Downward arrow (dark green) on the right side
+  uint16_t arrColor = 0x03A0; // dark green
+  int ax = cx + 12, ay = cy + 2;
+  g->fillRect(ax - 1, ay - 12, 3, 14, arrColor);
+  g->fillTriangle(ax - 5, ay, ax + 5, ay, ax, ay + 7, arrColor);
+}
+
+// Lightning bolt with upward red arrow (Output/Discharge power)
+static void drawIconLightningOut(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  drawIconLightning(g, cx, cy, color);
+  // Upward arrow (red) on the right side
+  uint16_t arrColor = 0xF800; // red
+  int ax = cx + 12, ay = cy - 8;
+  g->fillTriangle(ax - 5, ay, ax + 5, ay, ax, ay - 7, arrColor);
+  g->fillRect(ax - 1, ay, 3, 14, arrColor);
+}
+
 static DashParam dashParams[] = {
   // label  fullName          unit   sentinel isInt dec color   drawIcon              getValueColor     ecuId
   {"SOH",  "Battery SOH",    "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite,       0},
@@ -565,6 +671,13 @@ static DashParam dashParams[] = {
   {"",     "12V Battery",    "",     -1,  false, 1, 0xFD20, drawIcon12VBattery,     colorWhite,       2},
   {"OUT",  "Ext. Temp",      "\xB0""C", -99, false, 0, 0x07FF, drawIconOutdoorThermo,  colorWhite,       1},
   {"",     "Cell Delta V",   "mV",  -1,  false, 0, 0xFFFF, drawIconCellDelta,      colorWhite,       0},
+  {"",     "Cell V Max",     "V",   -1,  false, 2, 0x07E0, drawIconCellMax,        colorWhite,       0},
+  {"",     "Cell V Min",     "V",   -1,  false, 2, 0xFC10, drawIconCellMin,        colorWhite,       0},
+  {"FAN",  "Engine Fan",     "%",  -99,  true,  0, 0x07FF, drawIconFan,            colorWhite,       1},
+  {"",     "Climate Mode",   "",   -99,  false, 0, 0xB7FF, drawIconClimateLoop,    colorClimateLoopMode, 1},
+  {"",     "Max Charge",     "kW", -1,   false, 1, 0xFFE0, drawIconLightning,      colorWhite,       3},
+  {"",     "Input Power",    "kW", -1,   false, 1, 0x07E0, drawIconLightningIn,    colorWhite,       3},
+  {"",     "Output Power",   "kW", -1,   false, 1, 0xF800, drawIconLightningOut,   colorWhite,       3},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
@@ -584,6 +697,13 @@ static float getParamValue(int paramIndex) {
       if (obdCellVoltageMax < 0 || obdCellVoltageMin < 0) return -1;
       return (obdCellVoltageMax - obdCellVoltageMin) * 1000.0f;
     }
+    case 9:  return obdCellVoltageMax;  // Cell V Max in V
+    case 10: return obdCellVoltageMin;  // Cell V Min in V
+    case 11: return obdFanSpeed;
+    case 12: return obdClimateLoopMode;
+    case 13: return obdMaxChargePower;   // Max Charge Power in kW
+    case 14: return obdInputPower;       // Input Power in kW
+    case 15: return obdOutputPower;      // Output Power in kW
     default: return -999;
   }
 }
@@ -591,7 +711,6 @@ static float getParamValue(int paramIndex) {
 // Helper: draw value + unit text for a cell
 static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
                           const DashParam &param, float value) {
-  int textX = x0 + 48;
   int textY = y0 + cellH / 2 + 18;
   bool hasData = (value > param.noDataSentinel);
 
@@ -601,36 +720,71 @@ static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
     valColor = param.getValueColor(value);
   }
 
-  g->setFont(&FreeSans24pt7b);
-  g->setTextColor(valColor);
-  g->setTextSize(1);
-
+  char buf[16];
   if (hasData) {
-    char buf[16];
-    if (param.isInt) {
+    if (param.getValueColor == colorClimateLoopMode) {
+      int mode = (int)value;
+      if (mode == 1 || mode == 2) strcpy(buf, "COOL");
+      else if (mode == 4) strcpy(buf, "HEAT");
+      else strcpy(buf, "None");
+    } else if (param.isInt) {
       snprintf(buf, sizeof(buf), "%d", (int)value);
+    } else if (param.decimals >= 2) {
+      snprintf(buf, sizeof(buf), "%.2f", value);
     } else if (param.decimals >= 1) {
       snprintf(buf, sizeof(buf), "%.1f", value);
     } else {
       snprintf(buf, sizeof(buf), "%.0f", value);
     }
-    g->setCursor(textX, textY);
-    g->print(buf);
-
-    // Unit in smaller font (only if unit string is non-empty)
-    if (strlen(param.unit) > 0) {
-      int16_t bx, by;
-      uint16_t bw, bh;
-      g->getTextBounds(buf, textX, textY, &bx, &by, &bw, &bh);
-      int unitX = textX + bw + 2;
-      g->setFont(&FreeSans9pt7b);
-      g->setTextColor(0xBDF7); // light grey
-      g->setCursor(unitX, textY);
-      g->print(param.unit);
-    }
   } else {
-    g->setCursor(textX, textY);
-    g->print("--");
+    strcpy(buf, "--");
+  }
+
+  // Calculate widths to center text in the space right of the icon
+  int16_t bx, by;
+  uint16_t bw, bh;
+  
+  const GFXfont* valFont = &FreeSans24pt7b;
+  if (param.getValueColor == colorClimateLoopMode) {
+    valFont = &FreeSans18pt7b; 
+    textY -= 3; // Shift uppercase string slightly up to visually center it
+  }
+  
+  g->setFont(valFont);
+  g->getTextBounds(buf, 0, 0, &bx, &by, &bw, &bh);
+  int valW = bw;
+
+  int unitW = 0;
+  if (hasData && strlen(param.unit) > 0) {
+    g->setFont(&FreeSans9pt7b);
+    g->getTextBounds(param.unit, 0, 0, &bx, &by, &bw, &bh);
+    unitW = bw;
+  }
+
+  int totalW = valW + (unitW > 0 ? 4 + unitW : 0);
+  
+  // Icon takes ~44px. Text area is from x=46 to x=156
+  int availStart = 50;
+  int availW = 160 - availStart;
+  int textX = x0 + availStart + (availW - totalW) / 2;
+  
+  // Ensure we don't go too far left if the text is huge
+  if (textX < x0 + availStart) textX = x0 + availStart;
+
+  // Draw Value
+  g->setFont(valFont);
+  g->setTextColor(valColor);
+  g->setTextSize(1);
+  g->setCursor(textX, textY);
+  g->print(buf);
+
+  // Draw Unit
+  if (unitW > 0) {
+    int unitX = textX + valW + 4;
+    g->setFont(&FreeSans9pt7b);
+    g->setTextColor(0xBDF7); // light grey
+    g->setCursor(unitX, textY);
+    g->print(param.unit);
   }
 }
 
@@ -696,7 +850,9 @@ void DisplayManager::showHome() {
         int16_t lx, ly;
         uint16_t lw, lh;
         gfx->getTextBounds(p.label, 0, 0, &lx, &ly, &lw, &lh);
-        gfx->setCursor(cx - lw / 2, y0 + 50);
+        int textY = y0 + 50;
+        if (paramIdx == 11) textY += 4; // Shift FAN label down
+        gfx->setCursor(cx - lw / 2, textY);
         gfx->print(p.label);
       }
     }
@@ -743,7 +899,10 @@ void DisplayManager::updateHomeOBD() {
     float newVal = getParamValue(paramIdx);
     float diff = newVal - prevValues[i];
     if (diff < 0) diff = -diff;
-    if (diff < 0.05f) continue;
+    // Use threshold appropriate for the parameter's precision
+    float threshold = 0.05f;
+    if (dashParams[paramIdx].decimals >= 2) threshold = 0.01f;
+    if (diff < threshold) continue;
 
     prevValues[i] = newVal;
 
@@ -752,11 +911,26 @@ void DisplayManager::updateHomeOBD() {
     int x0 = col * cellW;
     int y0 = row * cellH;
 
-    // Clear only the text area
+    // Clear only the text area (right side of cell, sparing the icon area)
     gfx->fillRect(x0 + 44, y0 + 2, cellW - 46, cellH - 4, BLACK);
 
     // Redraw value + unit
     drawCellValue(gfx, x0, y0, cellH, dashParams[paramIdx], newVal);
+
+    // Redraw rotated labels for IN/OUT (they get erased by fillRect)
+    if (paramIdx == 2 || paramIdx == 7) {
+      const DashParam &p = dashParams[paramIdx];
+      gfx->setRotation(0);
+      gfx->setFont(NULL);
+      gfx->setTextColor(WHITE);
+      gfx->setTextSize(1);
+      int yOff = (paramIdx == 2) ? 28 : 32;
+      int px = 172 - 1 - (y0 + yOff);
+      int py = x0 + 2;
+      gfx->setCursor(px, py + 4);
+      gfx->print(p.label);
+      gfx->setRotation(1);
+    }
   }
 
   drawStatusLED();
@@ -985,6 +1159,56 @@ void DisplayManager::drawPageIndicator() {
     } else {
       gfx->drawCircle(cx, y, dotR, 0x7BEF);
     }
+  }
+}
+
+void DisplayManager::restoreBottomRow() {
+  // Only redraw the bottom row (row 2) and its grid line,
+  // instead of a full showHome() which causes a flash.
+  const int cols = 2;
+  const int cellW = 160;
+  const int cellH = 57;
+  const int row = 2;
+  int y0 = row * cellH; // 114
+
+  // Clear bottom row area
+  gfx->fillRect(0, y0, 320, 172 - y0, BLACK);
+  // Redraw grid line above bottom row
+  gfx->drawLine(cellW, y0, cellW, 172, 0x4208);
+  gfx->drawLine(0, y0, 320, y0, 0x4208);
+
+  // Redraw the two cells in the bottom row
+  for (int col = 0; col < cols; col++) {
+    int i = row * cols + col; // slot index 4 or 5
+    int paramIdx = dashPages[currentPage][i].paramIndex;
+    if (paramIdx < 0 || paramIdx >= DASH_PARAM_COUNT) continue;
+
+    int x0 = col * cellW;
+    int cx = x0 + 22;
+    int cy = y0 + 26;
+
+    const DashParam &p = dashParams[paramIdx];
+    if (p.drawIcon) {
+      p.drawIcon(gfx, cx, cy, p.iconColor);
+    }
+
+    // Draw label (simplified — most bottom-row params have no label)
+    if (strlen(p.label) > 0) {
+      gfx->setFont(&FreeSans9pt7b);
+      gfx->setTextColor(p.iconColor);
+      gfx->setTextSize(1);
+      int16_t lx, ly;
+      uint16_t lw, lh;
+      gfx->getTextBounds(p.label, 0, 0, &lx, &ly, &lw, &lh);
+      int textY = y0 + 50;
+      if (paramIdx == 11) textY += 4; // Shift FAN label down
+      gfx->setCursor(cx - lw / 2, textY);
+      gfx->print(p.label);
+    }
+
+    // Draw value
+    float val = getParamValue(paramIdx);
+    drawCellValue(gfx, x0, y0, cellH, p, val);
   }
 }
 
