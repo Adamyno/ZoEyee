@@ -774,18 +774,19 @@ static void drawIconBatteryHV(Arduino_GFX *g, int cx, int cy, uint16_t color) {
 
 // Power plug icon with "AC" text for AC Phase module
 static void drawIconACPlug(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Two prongs at the top
-  g->fillRect(cx - 7, cy - 20, 4, 14, color);
-  g->fillRect(cx + 3, cy - 20, 4, 14, color);
-  // Plug body (rounded rectangle)
-  g->fillRoundRect(cx - 11, cy - 8, 22, 14, 3, color);
-  // Cord going down
-  g->fillRect(cx - 2, cy + 6, 4, 10, color);
+  uint16_t gray = 0x7BEF; // Light gray for body/cord
+  // Two shorter white prongs at the top
+  g->fillRect(cx - 7, cy - 16, 4, 10, WHITE);
+  g->fillRect(cx + 3, cy - 16, 4, 10, WHITE);
+  // Plug body (light gray rounded rectangle)
+  g->fillRoundRect(cx - 11, cy - 8, 22, 14, 3, gray);
+  // Cord going down (light gray)
+  g->fillRect(cx - 2, cy + 6, 4, 10, gray);
   // "AC" text below
   g->setFont(NULL);
   g->setTextSize(1);
   g->setTextColor(color);
-  int lw = 12; // approx width of "AC" in 6px font
+  int lw = 12;
   g->setCursor(cx - (lw / 2), cy + 20);
   g->print("AC");
 }
