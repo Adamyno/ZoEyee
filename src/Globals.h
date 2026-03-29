@@ -61,7 +61,7 @@ struct DashSlot {
   int paramIndex;     // Index into DisplayManager's parameter register
 };
 
-#define MAX_DASH_PARAMS 8
+#define MAX_DASH_PARAMS 9
 extern DashSlot dashPages[MAX_PAGES][6];
 extern int currentPage;
 extern int numPages;

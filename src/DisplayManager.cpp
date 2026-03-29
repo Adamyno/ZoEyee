@@ -544,14 +544,14 @@ static void drawIconCellDelta(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->fillRect(barX, barStartY, barW, barH, barColor);
   g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
   g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
-  // Up arrow (left side, green)
+  // Up arrow (left side, green) - thinner, shifted up 4px
   uint16_t upColor = 0x07E0; // Green
-  g->fillTriangle(cx - 7, cy - 2, cx - 11, cy + 6, cx - 3, cy + 6, upColor);
-  g->fillRect(cx - 9, cy + 6, 5, 8, upColor);
-  // Down arrow (right side, red)
-  uint16_t dnColor = 0xF800; // Red
-  g->fillTriangle(cx + 7, cy + 14, cx + 3, cy + 6, cx + 11, cy + 6, dnColor);
-  g->fillRect(cx + 5, cy - 2, 5, 8, dnColor);
+  g->fillTriangle(cx - 4, cy - 12, cx - 9, cy - 3, cx + 1, cy - 3, upColor);
+  g->fillRect(cx - 6, cy - 3, 5, 12, upColor);
+  // Down arrow (right side, red) - thinner
+  uint16_t dnColor = 0xFC10; // Red
+  g->fillTriangle(cx + 4, cy + 18, cx - 1, cy + 9, cx + 9, cy + 9, dnColor);
+  g->fillRect(cx + 2, cy - 3, 5, 12, dnColor);
 }
 
 static DashParam dashParams[] = {
