@@ -1276,14 +1276,31 @@ void DisplayManager::showInfo() {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
   gfx->setTextSize(1);
+
+  // SW Version
   gfx->setCursor(10, 65);
-  gfx->printf("SW Version: %s\n", SW_VERSION);
+  gfx->printf("SW Version: %s", SW_VERSION);
+
+  // Flash: used / total
+  uint32_t flashTotal = ESP.getFlashChipSize() / 1024;
+  uint32_t sketchUsed = ESP.getSketchSize() / 1024;
+  uint32_t flashFree = ESP.getFreeSketchSpace() / 1024;
   gfx->setCursor(10, 95);
-  gfx->printf("CPU: %d MHz\n", ESP.getCpuFreqMHz());
+  gfx->printf("Flash: %uKB / %uKB", sketchUsed, sketchUsed + flashFree);
+
+  // RAM: free / total
+  uint32_t heapTotal = ESP.getHeapSize() / 1024;
+  uint32_t heapFree = ESP.getFreeHeap() / 1024;
   gfx->setCursor(10, 125);
-  gfx->printf("Flash: %u KB\n", ESP.getFlashChipSize() / 1024);
+  gfx->printf("RAM: %uKB free / %uKB", heapFree, heapTotal);
+
+  // Uptime
+  unsigned long uptimeSec = millis() / 1000;
+  int hrs = uptimeSec / 3600;
+  int mins = (uptimeSec % 3600) / 60;
+  int secs = uptimeSec % 60;
   gfx->setCursor(10, 155);
-  gfx->printf("Heap: %u KB\n", ESP.getFreeHeap() / 1024);
+  gfx->printf("Uptime: %02d:%02d:%02d", hrs, mins, secs);
 }
 
 void DisplayManager::drawTopBar(bool softRefresh) {
