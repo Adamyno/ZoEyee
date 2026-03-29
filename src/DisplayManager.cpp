@@ -633,31 +633,30 @@ static void drawIconClimateLoop(Arduino_GFX *g, int cx, int cy, uint16_t color) 
 
 // Lightning bolt icon (plain) for Max Charge Power
 static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Large lightning bolt shape
-  int x0 = cx - 6, y0 = cy - 20;
-  g->fillTriangle(x0, y0 + 18, x0 + 14, y0, x0 + 8, y0 + 18, color);
-  g->fillTriangle(x0 + 4, y0 + 16, x0 + 18, y0 + 16, x0 + 12, y0 + 38, color);
-  g->fillRect(x0 + 5, y0 + 16, 8, 4, color);
+  // Classic zigzag lightning bolt, centered
+  // Points form the lightning shape top-to-bottom:
+  //   top: cx-2, cy-18
+  //   zig right: cx+6, cy-6
+  //   narrow left: cx, cy-6
+  //   zig right: cx+8, cy+6
+  //   narrow left: cx+2, cy+6
+  //   bottom point: cx-4, cy+20
+  //   back up right: cx+2, cy+6  (close)
+  // Two triangles forming the shape:
+  g->fillTriangle(cx - 2, cy - 18, cx + 8, cy - 4, cx - 1, cy - 4, color);  // top half
+  g->fillTriangle(cx + 1, cy - 6,  cx + 10, cy - 6, cx - 4, cy + 20, color); // bottom half
+  g->fillRect(cx - 1, cy - 6, 9, 3, color); // bridge between halves
 }
 
-// Lightning bolt with downward green arrow (Input/Charge power)
-static void drawIconLightningIn(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  drawIconLightning(g, cx, cy, color);
-  // Downward arrow (dark green) on the right side
-  uint16_t arrColor = 0x03A0; // dark green
-  int ax = cx + 12, ay = cy + 2;
-  g->fillRect(ax - 1, ay - 12, 3, 14, arrColor);
-  g->fillTriangle(ax - 5, ay, ax + 5, ay, ax, ay + 7, arrColor);
-}
-
-// Lightning bolt with upward red arrow (Output/Discharge power)
-static void drawIconLightningOut(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  drawIconLightning(g, cx, cy, color);
-  // Upward arrow (red) on the right side
-  uint16_t arrColor = 0xF800; // red
-  int ax = cx + 12, ay = cy - 8;
-  g->fillTriangle(ax - 5, ay, ax + 5, ay, ax, ay - 7, arrColor);
-  g->fillRect(ax - 1, ay, 3, 14, arrColor);
+// Lightning bolt with "DC" text for DC Power
+static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  drawIconLightning(g, cx - 6, cy, color);
+  // Draw small "DC" text to the right
+  g->setFont(NULL); // default tiny font
+  g->setTextSize(1);
+  g->setTextColor(0xBDF7); // light gray
+  g->setCursor(cx + 6, cy + 8);
+  g->print("DC");
 }
 
 static DashParam dashParams[] = {
@@ -676,8 +675,7 @@ static DashParam dashParams[] = {
   {"FAN",  "Engine Fan",     "%",  -99,  true,  0, 0x07FF, drawIconFan,            colorWhite,       1},
   {"",     "Climate Mode",   "",   -99,  false, 0, 0xB7FF, drawIconClimateLoop,    colorClimateLoopMode, 1},
   {"",     "Max Charge",     "kW", -1,   false, 1, 0xFFE0, drawIconLightning,      colorWhite,       3},
-  {"",     "Input Power",    "kW", -1,   false, 1, 0x07E0, drawIconLightningIn,    colorWhite,       3},
-  {"",     "Output Power",   "kW", -1,   false, 1, 0xF800, drawIconLightningOut,   colorWhite,       3},
+  {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorWhite,       0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
@@ -702,8 +700,7 @@ static float getParamValue(int paramIndex) {
     case 11: return obdFanSpeed;
     case 12: return obdClimateLoopMode;
     case 13: return obdMaxChargePower;   // Max Charge Power in kW
-    case 14: return obdInputPower;       // Input Power in kW
-    case 15: return obdOutputPower;      // Output Power in kW
+    case 14: return obdDCPower;          // DC Power in kW (V×A/1000)
     default: return -999;
   }
 }

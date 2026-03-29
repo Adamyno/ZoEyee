@@ -727,18 +727,6 @@ void ObdManager::processLbcStep() {
             obdMaxChargePower = rawMaxChg * 0.01f;
             Serial.printf("[ZOE] Max Charge Power = %.2f kW\n", obdMaxChargePower);
           }
-          // Input Power (charge/regen): bits 176-191, multiplier 0.01
-          int rawInPwr = parseUDSBits(isotp, "6101", 176, 191);
-          if (rawInPwr >= 0) {
-            obdInputPower = rawInPwr * 0.01f;
-            Serial.printf("[ZOE] Input Power = %.2f kW\n", obdInputPower);
-          }
-          // Output Power (discharge): bits 192-207, multiplier 0.01
-          int rawOutPwr = parseUDSBits(isotp, "6101", 192, 207);
-          if (rawOutPwr >= 0) {
-            obdOutputPower = rawOutPwr * 0.01f;
-            Serial.printf("[ZOE] Output Power = %.2f kW\n", obdOutputPower);
-          }
           lastOBDRxTime = millis();
           lastOBDPollTime = millis();
         } else {
@@ -859,7 +847,8 @@ void ObdManager::buildPollList() {
     // Track ECU needs
     // ECU mapping: params 0,1,3,11 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
     if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3 || paramIdx == 11) pageNeedsEVC = true;
-    if (paramIdx == 8 || paramIdx == 9 || paramIdx == 10 || paramIdx == 13 || paramIdx == 14 || paramIdx == 15) pageNeedsLBC = true;
+    if (paramIdx == 14) pageNeedsEVC = true; // DC Power needs EVC (voltage + current)
+    if (paramIdx == 8 || paramIdx == 9 || paramIdx == 10 || paramIdx == 13) pageNeedsLBC = true;
     if (paramIdx == 2) { pageNeedsHVAC = true; needHvac2121 = true; }
     if (paramIdx == 4) { pageNeedsHVAC = true; needHvac2144 = true; }
     if (paramIdx == 5 || paramIdx == 7) { pageNeedsHVAC = true; needHvac2143 = true; }
@@ -879,6 +868,8 @@ static const char* getEvcCommand(int paramIdx) {
     case 1: return "222002"; // SOC
     case 3: return "222001"; // Battery Temp
     case 11: return "223471"; // Fan Speed
+    case 14: return "223203"; // HV Voltage (first of 2-step: voltage then current)
+    case 99: return "223204"; // HV Current (shadow step for DC Power calc)
     default: return nullptr;
   }
 }
@@ -958,6 +949,28 @@ void ObdManager::processPolling() {
           obdFanSpeed = raw * 5;
           Serial.printf("[ZOE] Engine Fan = %d%%\n", obdFanSpeed);
         }
+      } else if (resp.indexOf("623203") >= 0 || resp.indexOf("62 32 03") >= 0) {
+        int raw = parseUDSHex(resp, "623203", 2);
+        if (raw >= 0) {
+          obdHVBatVoltage = raw * 0.5f;
+          Serial.printf("[ZOE] HV Voltage = %.1f V\n", obdHVBatVoltage);
+          // Recalculate DC Power if current is known
+          if (obdHVBatCurrent > -900) {
+            obdDCPower = obdHVBatVoltage * obdHVBatCurrent / 1000.0f;
+            Serial.printf("[ZOE] DC Power = %.2f kW\n", obdDCPower);
+          }
+        }
+      } else if (resp.indexOf("623204") >= 0 || resp.indexOf("62 32 04") >= 0) {
+        int raw = parseUDSHex(resp, "623204", 2);
+        if (raw >= 0) {
+          obdHVBatCurrent = (raw - 32768) * 0.25f;
+          Serial.printf("[ZOE] HV Current = %.2f A\n", obdHVBatCurrent);
+          // Recalculate DC Power if voltage is known
+          if (obdHVBatVoltage > 0) {
+            obdDCPower = obdHVBatVoltage * obdHVBatCurrent / 1000.0f;
+            Serial.printf("[ZOE] DC Power = %.2f kW\n", obdDCPower);
+          }
+        }
       } else if (resp.indexOf("621417") >= 0 || resp.indexOf("62 14 17") >= 0) {
         int raw = parseUDSHex(resp, "621417", 2);
         if (raw >= 0) {
@@ -1008,7 +1021,8 @@ void ObdManager::processPolling() {
     int evcCount = 0;
     for (int i = 0; i < pagePollCount; i++) {
       int p = pagePollList[i];
-      if (p == 0 || p == 1 || p == 3 || p == 11) evcCount++;
+      if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14) evcCount++;
+      if (p == 14) evcCount++; // param 14 needs 2 EVC steps (voltage + current)
     }
     
     // Count LBC params
@@ -1034,18 +1048,19 @@ void ObdManager::processPolling() {
           obdCurrentECU = 0;
         }
         
-        // Find the nth EVC param
-        int evcIdx = 0;
-        for (int i = 0; i < pagePollCount; i++) {
+        // Build expanded EVC command list (param 14 expands to 2 steps: voltage + current)
+        int evcCmds[32];
+        int evcCmdCount = 0;
+        for (int i = 0; i < pagePollCount && evcCmdCount < 30; i++) {
           int p = pagePollList[i];
-          if (p == 0 || p == 1 || p == 3 || p == 11) {
-            if (evcIdx == obdPollIndex) {
-              const char *cmd = getEvcCommand(p);
-              if (cmd) sendCommand(cmd);
-              break;
-            }
-            evcIdx++;
+          if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14) {
+            evcCmds[evcCmdCount++] = p;
+            if (p == 14) evcCmds[evcCmdCount++] = 99; // shadow: HV Current
           }
+        }
+        if (obdPollIndex < evcCmdCount) {
+          const char *cmd = getEvcCommand(evcCmds[obdPollIndex]);
+          if (cmd) sendCommand(cmd);
         }
       } else if (obdPollIndex < evcCount + lbcCount) {
         // --- LBC Phase (Non-blocking state machine) ---

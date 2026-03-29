@@ -72,8 +72,9 @@ float obdCellVoltageMin = -1;
 int   obdFanSpeed = -99;
 int   obdClimateLoopMode = -99;
 float obdMaxChargePower = -1;
-float obdInputPower = -1;
-float obdOutputPower = -1;
+float obdHVBatVoltage = -1;
+float obdHVBatCurrent = -999;
+float obdDCPower = -999;
 
 String btTargetMAC = "";
 String btTargetName = "";
