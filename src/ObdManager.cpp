@@ -847,7 +847,7 @@ void ObdManager::buildPollList() {
     // Track ECU needs
     // ECU mapping: params 0,1,3,11 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
     if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3 || paramIdx == 11) pageNeedsEVC = true;
-    if (paramIdx == 14) pageNeedsEVC = true; // DC Power needs EVC (voltage + current)
+    if (paramIdx == 14 || paramIdx == 15) pageNeedsEVC = true; // DC Power and Available Energy need EVC
     if (paramIdx == 8 || paramIdx == 9 || paramIdx == 10 || paramIdx == 13) pageNeedsLBC = true;
     if (paramIdx == 2) { pageNeedsHVAC = true; needHvac2121 = true; }
     if (paramIdx == 4) { pageNeedsHVAC = true; needHvac2144 = true; }
@@ -869,6 +869,7 @@ static const char* getEvcCommand(int paramIdx) {
     case 3: return "222001"; // Battery Temp
     case 11: return "223471"; // Fan Speed
     case 14: return "223203"; // HV Voltage (first of 2-step: voltage then current)
+    case 15: return "22320C"; // Available discharge Energy
     case 99: return "223204"; // HV Current (shadow step for DC Power calc)
     default: return nullptr;
   }
@@ -971,6 +972,12 @@ void ObdManager::processPolling() {
             Serial.printf("[ZOE] DC Power = %.2f kW\n", obdDCPower);
           }
         }
+      } else if (resp.indexOf("62320C") >= 0 || resp.indexOf("62 32 0C") >= 0) {
+        int raw = parseUDSHex(resp, "62320C", 2);
+        if (raw >= 0) {
+          obdAvailEnergy = raw * 0.005f;
+          Serial.printf("[ZOE] Available Energy = %.1f kWh\n", obdAvailEnergy);
+        }
       } else if (resp.indexOf("621417") >= 0 || resp.indexOf("62 14 17") >= 0) {
         int raw = parseUDSHex(resp, "621417", 2);
         if (raw >= 0) {
@@ -1021,7 +1028,7 @@ void ObdManager::processPolling() {
     int evcCount = 0;
     for (int i = 0; i < pagePollCount; i++) {
       int p = pagePollList[i];
-      if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14) evcCount++;
+      if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14 || p == 15) evcCount++;
       if (p == 14) evcCount++; // param 14 needs 2 EVC steps (voltage + current)
     }
     
@@ -1053,7 +1060,7 @@ void ObdManager::processPolling() {
         int evcCmdCount = 0;
         for (int i = 0; i < pagePollCount && evcCmdCount < 30; i++) {
           int p = pagePollList[i];
-          if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14) {
+          if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14 || p == 15) {
             evcCmds[evcCmdCount++] = p;
             if (p == 14) evcCmds[evcCmdCount++] = 99; // shadow: HV Current
           }

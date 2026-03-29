@@ -75,6 +75,7 @@ float obdMaxChargePower = -1;
 float obdHVBatVoltage = -1;
 float obdHVBatCurrent = -999;
 float obdDCPower = -999;
+float obdAvailEnergy = -1;
 
 String btTargetMAC = "";
 String btTargetName = "";

@@ -696,6 +696,21 @@ static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) 
   g->print("DC");
 }
 
+// Battery icon with "kWh" text for Available Energy
+static void drawIconBatteryKwh(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Battery body
+  g->drawRect(cx - 12, cy - 14, 24, 28, color);
+  g->drawRect(cx - 11, cy - 13, 22, 26, color);
+  // Battery cap
+  g->fillRect(cx - 5, cy - 18, 10, 5, color);
+  // "kWh" text inside the battery
+  g->setFont(NULL); // tiny pixel font
+  g->setTextSize(1);
+  g->setTextColor(color);
+  g->setCursor(cx - 9, cy - 3);
+  g->print("kWh");
+}
+
 static DashParam dashParams[] = {
   // label  fullName          unit   sentinel isInt dec color   drawIcon              getValueColor     ecuId
   {"SOH",  "Battery SOH",    "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite,       0},
@@ -713,6 +728,7 @@ static DashParam dashParams[] = {
   {"",     "Climate Mode",   "",   -99,  false, 0, 0xB7FF, drawIconClimateLoop,    colorClimateLoopMode, 1},
   {"",     "Max Charge",     "kW", -1,   false, 1, 0xFFE0, drawIconLightning,      colorWhite,       3},
   {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorDCPower,     0},
+  {"",     "Avail Energy",   "kWh",-1,   false, 1, 0x07E0, drawIconBatteryKwh,     colorWhite,       0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
@@ -740,6 +756,7 @@ static float getParamValue(int paramIndex) {
     case 14: 
       if (obdDCPower <= -900) return -999;
       return (obdDCPower < 0) ? -obdDCPower : obdDCPower; // Absolute value, icons indicate direction
+    case 15: return obdAvailEnergy;
     default: return -999;
   }
 }
