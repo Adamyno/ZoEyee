@@ -643,19 +643,21 @@ static void drawIconLightning(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->fillRect(cx - 6, cy - 2, 12, 6, color);
 }
 
-// Dynamic Lightning + DC text + Arrow for DC Power
+// Dynamic DC text + Large Arrow for DC Power
 static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  bool charging = (obdDCPower >= 0);
+  // Zoe conventionally uses negative current for charging (regen/plug-in)
+  // and positive current for discharging. At rest it often sits around -0.19kW.
+  bool charging = (obdDCPower < 0);
   
   uint16_t arrColor = charging ? 0x07E0 : 0xF800; // Green : Red
   uint16_t txtColor = charging ? 0x87E0 : 0xFA08; // Light green : Light red
   
-  // Arrow dimensions (as large as possible above the text)
-  int arrowTop = cy - 24;
-  int arrowBottom = cy + 4;
-  int stemHalfW = 6;
-  int headHalfW = 14;
-  int headH = 12;
+  // Arrow dimensions (enlarged and extended lower)
+  int arrowTop = cy - 26;
+  int arrowBottom = cy + 12; // Extended lower by ~5-8px (approaching text)
+  int stemHalfW = 8;
+  int headHalfW = 18;
+  int headH = 16;
 
   // Draw dynamic green down arrow or red up arrow
   if (charging) {
@@ -674,14 +676,6 @@ static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) 
                     cx, arrowTop, arrColor);
   }
 
-  // Integrated yellow lightning bolt in the center of the arrow
-  uint16_t bolt = 0xFFE0;
-  int bx = cx, by = cy - 10;
-  g->fillTriangle(bx + 4, by - 8, bx - 2, by - 8, bx - 4, by + 1, bolt);
-  g->fillTriangle(bx + 4, by - 8, bx - 4, by + 1, bx + 2, by + 1, bolt);
-  g->fillTriangle(bx - 2, by + 1, bx + 4, by + 1, bx - 3, by + 10, bolt);
-  g->fillRect(bx - 3, by, 7, 3, bolt);
-
   // Dynamic colored "DC" text at the bottom, matching SOH font
   g->setFont(&FreeSans9pt7b);
   g->setTextSize(1);
@@ -691,7 +685,7 @@ static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) 
   uint16_t lw, lh;
   g->getTextBounds("DC", 0, 0, &lx, &ly, &lw, &lh);
   // Center horizontally, place at bottom below arrow
-  g->setCursor(cx - (lw / 2), cy + 26);
+  g->setCursor(cx - (lw / 2), cy + 28);
   g->print("DC");
 }
 
