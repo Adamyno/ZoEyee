@@ -49,6 +49,12 @@ void setup(void) {
   numPages = preferences.getUChar("pages", 1);
   if (numPages < 1) numPages = 1;
   if (numPages > MAX_PAGES) numPages = MAX_PAGES;
+  autoScrollEnabled = preferences.getBool("ascroll", false);
+  autoScrollInterval = preferences.getUChar("asinterv", 5);
+  if (autoScrollInterval < 1) autoScrollInterval = 1;
+  if (autoScrollInterval > 30) autoScrollInterval = 30;
+  vehicleType = preferences.getUChar("cartype", 0);
+  currentLanguage = preferences.getUChar("lang", 0);
   // Load slot configurations
   for (int p = 0; p < MAX_PAGES; p++) {
     for (int s = 0; s < 6; s++) {
@@ -106,6 +112,15 @@ void setup(void) {
 void loop() {
   WebConsole::handleClient(); // Process incoming Web Console HTTP requests
   TouchManager::processGestures();
+
+  // Auto-scroll dashboard pages
+  if (autoScrollEnabled && currentState == STATE_HOME && numPages > 1) {
+    if (millis() - lastAutoScrollTime >= (unsigned long)autoScrollInterval * 1000) {
+      currentPage = (currentPage + 1) % numPages;
+      DisplayManager::showHome();
+      lastAutoScrollTime = millis();
+    }
+  }
 
   // WiFi Connection State Transition Timer
   if (currentState == STATE_WIFI_CONNECTING && wifiTransitionTime > 0 && millis() > wifiTransitionTime) {

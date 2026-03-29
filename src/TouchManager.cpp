@@ -109,6 +109,7 @@ void TouchManager::processGestures() {
           if (deltaX > 80 && numPages > 1) {
             currentPage = (currentPage - 1 + numPages) % numPages;
             pageSwipeTime = millis();
+            autoScrollEnabled = false; // Stop auto-scroll on manual swipe
             ObdManager::resetPollIndex();
             DisplayManager::showHome();
             touching = false;
@@ -116,6 +117,7 @@ void TouchManager::processGestures() {
           } else if (deltaX < -80 && numPages > 1) {
             currentPage = (currentPage + 1) % numPages;
             pageSwipeTime = millis();
+            autoScrollEnabled = false; // Stop auto-scroll on manual swipe
             ObdManager::resetPollIndex();
             DisplayManager::showHome();
             touching = false;
@@ -183,39 +185,97 @@ void TouchManager::processGestures() {
         return;
       }
 
-      // === Settings: independent handler ===
+      // === Settings: scrollable list handler ===
       if (currentState == STATE_SETTINGS) {
-        if (abs(deltaY) < 50 && abs(deltaX) > 60) {
-          if (deltaX > 60 && numPages > 1) {
-            numPages--;
-            if (currentPage >= numPages) currentPage = numPages - 1;
-            preferences.putUChar("pages", numPages);
+        const int listStartY = 42;
+        const int itemH = 42;
+        const int totalItems = 4;
+        const int visibleItems = 3;
+
+        // Up/down swipe → scroll list
+        if (abs(deltaX) < 50 && abs(deltaY) > 40) {
+          if (deltaY > 40 && settingsScrollIndex > 0) {
+            settingsScrollIndex--;
             DisplayManager::showSettings(false);
-          } else if (deltaX < -60 && numPages < MAX_PAGES) {
-            numPages++;
-            preferences.putUChar("pages", numPages);
+          } else if (deltaY < -40 && settingsScrollIndex < totalItems - visibleItems) {
+            settingsScrollIndex++;
             DisplayManager::showSettings(false);
           }
         }
+
+        // Tap handling
         if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
+          // Back button (top-left)
           if (startY < 40 && startX < 80) {
             currentState = STATE_MENU;
             DisplayManager::drawMenu();
           }
-          // Tap on left arrow (decrease pages)
-          else if (startX >= 50 && startX <= 90 && startY >= 85 && startY <= 135 && numPages > 1) {
-            numPages--;
-            if (currentPage >= numPages) currentPage = numPages - 1;
-            preferences.putUChar("pages", numPages);
-            DisplayManager::showSettings(false);
-          }
-          // Tap on right arrow (increase pages)
-          else if (startX >= 230 && startX <= 270 && startY >= 85 && startY <= 135 && numPages < MAX_PAGES) {
-            numPages++;
-            preferences.putUChar("pages", numPages);
-            DisplayManager::showSettings(false);
+          // Determine which row was tapped
+          else if (startY >= listStartY) {
+            int tappedVis = (startY - listStartY) / itemH;
+            if (tappedVis < visibleItems) {
+              int tappedIdx = settingsScrollIndex + tappedVis;
+              int rowY = listStartY + tappedVis * itemH;
+
+              switch (tappedIdx) {
+                case 0: { // Pages — tap left/right arrows
+                  if (startX >= 170 && startX <= 200 && numPages > 1) {
+                    numPages--;
+                    if (currentPage >= numPages) currentPage = numPages - 1;
+                    preferences.putUChar("pages", numPages);
+                    DisplayManager::showSettings(false);
+                  } else if (startX >= 240 && startX <= 270 && numPages < MAX_PAGES) {
+                    numPages++;
+                    preferences.putUChar("pages", numPages);
+                    DisplayManager::showSettings(false);
+                  }
+                  break;
+                }
+                case 1: { // Auto-Scroll
+                  // Tap checkbox area (155-190)
+                  if (startX >= 155 && startX <= 190) {
+                    autoScrollEnabled = !autoScrollEnabled;
+                    preferences.putBool("ascroll", autoScrollEnabled);
+                    if (autoScrollEnabled) lastAutoScrollTime = millis();
+                    DisplayManager::showSettings(false);
+                  }
+                  // Tap up arrow (increase interval)
+                  else if (autoScrollEnabled && startX >= 215 && startX <= 255 && startY < rowY + itemH/2 - 2) {
+                    if (autoScrollInterval < 30) {
+                      autoScrollInterval++;
+                      preferences.putUChar("asinterv", autoScrollInterval);
+                      DisplayManager::showSettings(false);
+                    }
+                  }
+                  // Tap down arrow (decrease interval)
+                  else if (autoScrollEnabled && startX >= 215 && startX <= 255 && startY > rowY + itemH/2 + 2) {
+                    if (autoScrollInterval > 1) {
+                      autoScrollInterval--;
+                      preferences.putUChar("asinterv", autoScrollInterval);
+                      DisplayManager::showSettings(false);
+                    }
+                  }
+                  break;
+                }
+                case 2: { // Car Type — open picker (Phase 4)
+                  // TODO: STATE_VEHICLE_PICKER
+                  break;
+                }
+                case 3: { // Language — open picker (Phase 5)
+                  // TODO: STATE_LANGUAGE_PICKER
+                  break;
+                }
+              }
+            }
           }
         }
+
+        // Edge swipe left → back to menu
+        if (startX < 30 && deltaX < -60) {
+          currentState = STATE_MENU;
+          DisplayManager::drawMenu();
+        }
+
         touching = false;
         return;
       }

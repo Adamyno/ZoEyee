@@ -21,6 +21,32 @@ int pickerSlotIndex = 0;
 int pickerPage = 0;
 bool pickerJustOpened = false;
 int currentSlotIndex = 0;
+int settingsScrollIndex = 0;
+
+// Auto-scroll
+bool autoScrollEnabled = false;
+int autoScrollInterval = 5;
+unsigned long lastAutoScrollTime = 0;
+
+// Vehicle type
+int vehicleType = 0;
+int vehiclePickerScroll = 0;
+const char* vehicleTypes[] = {
+  "ZE Phase 1 (Q90/Q210)",
+  "ZE Phase 2 (R240/ZE40)",
+  "ZE50",
+  "Dacia Spring"
+};
+const int vehicleTypeCount = 4;
+
+// Language
+int currentLanguage = 0;
+int languagePickerScroll = 0;
+const char* languageNames[] = {"English", "Magyar"};
+const int languageCount = 2;
+
+// Single module view
+int singleModuleParamIdx = -1;
 int menuIndex = 0;
 const int menuCount = 5;
 const char *menuItems[] = {"INFO", "WIFI", "BT SCAN", "BRIGHTNESS", "SETTINGS"};

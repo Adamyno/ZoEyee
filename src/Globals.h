@@ -22,7 +22,10 @@ enum State {
   STATE_BT_DEVICE_INFO,
   STATE_BT_STATUS,
   STATE_SLOT_PICKER,   // Parameter selection overlay
-  STATE_SETTINGS       // Settings screen
+  STATE_SETTINGS,      // Settings screen
+  STATE_VEHICLE_PICKER,
+  STATE_LANGUAGE_PICKER,
+  STATE_SINGLE_MODULE
 };
 
 // HVAC Polling State Machine (non-blocking)
@@ -95,6 +98,27 @@ extern int pickerSlotIndex;
 extern int pickerPage;
 extern bool pickerJustOpened;
 extern int currentSlotIndex; // For tracking which slot is being edited
+extern int settingsScrollIndex;
+
+// Auto-scroll
+extern bool autoScrollEnabled;
+extern int autoScrollInterval;       // 1-30 seconds
+extern unsigned long lastAutoScrollTime;
+
+// Vehicle type
+extern int vehicleType;
+extern const char* vehicleTypes[];
+extern const int vehicleTypeCount;
+extern int vehiclePickerScroll;
+
+// Language
+extern int currentLanguage;          // 0=EN, 1=HU
+extern const char* languageNames[];
+extern const int languageCount;
+extern int languagePickerScroll;
+
+// Single module view
+extern int singleModuleParamIdx;
 
 extern State currentState;
 extern int menuIndex;
