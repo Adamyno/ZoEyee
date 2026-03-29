@@ -429,9 +429,9 @@ static void drawIconBatteryThermo(Arduino_GFX *g, int cx, int cy, uint16_t color
   g->fillCircle(cx, cy + 14, 3, thInner);
   g->fillRect(cx - 1, cy - 5, 3, 17, thInner);
   // Tick marks inside battery (White)
-  g->drawLine(cx + 4, cy - 6, cx + 8, cy - 6, WHITE);
-  g->drawLine(cx + 4, cy - 1, cx + 7, cy - 1, WHITE);
-  g->drawLine(cx + 4, cy + 4, cx + 8, cy + 4, WHITE);
+  g->drawLine(cx + 4, cy - 6, cx + 7, cy - 6, WHITE);
+  g->drawLine(cx + 4, cy - 1, cx + 6, cy - 1, WHITE);
+  g->drawLine(cx + 4, cy + 4, cx + 7, cy + 4, WHITE);
 }
 
 static void drawIconSnowflake(Arduino_GFX *g, int cx, int cy, uint16_t color) {
@@ -487,31 +487,38 @@ static void drawIconGauge(Arduino_GFX *g, int cx, int cy, uint16_t color) {
 }
 
 static void drawIcon12VBattery(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // 12V car battery: rectangle body + 2 terminal posts on top
-  int bw = 26, bh = 32;
+  // 12V car battery: wide horizontal rectangle + 2 terminal posts on top
+  int bw = 40, bh = 28;
   int bx = cx - bw/2, by = cy - bh/2 + 4;
-  // Battery body
-  g->drawRoundRect(bx, by, bw, bh, 3, color);
-  g->drawRoundRect(bx+1, by+1, bw-2, bh-2, 2, color);
+  // Battery body (square corners, white outline)
+  g->drawRect(bx, by, bw, bh, WHITE);
+  g->drawRect(bx+1, by+1, bw-2, bh-2, WHITE);
   // Terminal posts (2 small rectangles on top)
-  g->fillRect(cx - 8, by - 4, 5, 5, color);
-  g->fillRect(cx + 3, by - 4, 5, 5, color);
-  // "12" text inside
+  g->fillRect(cx - 12, by - 4, 6, 5, WHITE);
+  g->fillRect(cx + 6, by - 4, 6, 5, WHITE);
+  // 3 cyan charge bars inside battery body
+  uint16_t barColor = 0x03B7;  // Cyan (matching SOC/BatTemp)
+  int barX = bx + 3, barW = bw - 6, barH = 6, gap = 2;
+  int barStartY = by + bh - 4 - barH;  // bottom bar
+  g->fillRect(barX, barStartY, barW, barH, barColor);
+  g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
+  g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
+  // "12V" text inside (white)
   g->setFont(&FreeSans9pt7b);
-  g->setTextColor(color);
+  g->setTextColor(WHITE);
   g->setTextSize(1);
-  g->setCursor(cx - 8, cy + 12);
-  g->print("12");
+  g->setCursor(cx - 17, cy + 10);
+  g->print("12V");
 }
 
 static void drawIconOutdoorThermo(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Outdoor thermometer similar to cabin but with cyan/blue color
+  // Outdoor thermometer (same shape as cabin, blue mercury)
   // Outer bulb at bottom
-  g->fillCircle(cx, cy + 17, 9, color);
+  g->fillCircle(cx, cy + 17, 9, WHITE);
   // Tall stem from top to bulb
-  g->fillRoundRect(cx - 5, cy - 22, 10, 39, 5, color);
-  // Inner mercury (cyan)
-  uint16_t inner = 0x07FF; // CYAN
+  g->fillRoundRect(cx - 5, cy - 22, 10, 39, 5, WHITE);
+  // Inner mercury (blue)
+  uint16_t inner = 0x03B7; // Blue
   g->fillCircle(cx, cy + 17, 6, inner);
   g->fillRect(cx - 3, cy - 14, 6, 29, inner);
   // Tick marks
@@ -531,7 +538,7 @@ static DashParam dashParams[] = {
   {"",     "Battery Temp",   "\xB0""C", -99, false, 0, 0xFFFF, drawIconBatteryThermo, colorBatTemp,    0},
   {"RPM",  "AC Compressor",  "",     -1,  true,  0, 0xB7FF, drawIconSnowflake,      colorACRpm,       1},
   {"BAR",  "AC Pressure",    "",     -1,  false, 1, 0xB7FF, drawIconSnowflake,      colorACPressure,  1},
-  {"V",    "12V Battery",    "",     -1,  false, 1, 0xFD20, drawIcon12VBattery,     colorWhite,       2},
+  {"",     "12V Battery",    "",     -1,  false, 1, 0xFD20, drawIcon12VBattery,     colorWhite,       2},
   {"OUT",  "Ext. Temp",      "\xB0""C", -99, false, 0, 0x07FF, drawIconOutdoorThermo,  colorWhite,       1},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
@@ -634,14 +641,25 @@ void DisplayManager::showHome() {
       gfx->setTextSize(1);
 
       if (paramIdx == 2) {
-        // "IN" label rotated 90°
+        // "IN" label rotated 90° (small built-in font, white, up 8px from 35)
         gfx->setRotation(0);
-        int px = 172 - 1 - (y0 + 30);
+        int px = 172 - 1 - (y0 + 43);
         int py = x0 + 2;
-        gfx->setFont(&FreeSans9pt7b);
-        gfx->setTextColor(p.iconColor);
+        gfx->setFont(NULL);
+        gfx->setTextColor(WHITE);
         gfx->setTextSize(1);
-        gfx->setCursor(px, py + 14);
+        gfx->setCursor(px, py + 4);
+        gfx->print(p.label);
+        gfx->setRotation(1);
+      } else if (paramIdx == 7) {
+        // "OUT" label rotated 90° (small built-in font, white, up 4px from 35)
+        gfx->setRotation(0);
+        int px = 172 - 1 - (y0 + 39);
+        int py = x0 + 2;
+        gfx->setFont(NULL);
+        gfx->setTextColor(WHITE);
+        gfx->setTextSize(1);
+        gfx->setCursor(px, py + 4);
         gfx->print(p.label);
         gfx->setRotation(1);
       } else {
