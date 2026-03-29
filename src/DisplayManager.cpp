@@ -650,29 +650,48 @@ static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) 
   uint16_t arrColor = charging ? 0x07E0 : 0xF800; // Green : Red
   uint16_t txtColor = charging ? 0x87E0 : 0xFA08; // Light green : Light red
   
-  // Tiny yellow bolt at the top (cy - 14)
-  uint16_t bolt = 0xFFE0;
-  int bx = cx, by = cy - 14;
-  g->fillTriangle(bx + 3, by - 6, bx - 1, by - 6, bx - 3, by, bolt);
-  g->fillTriangle(bx + 3, by - 6, bx - 3, by, bx + 1, by, bolt);
-  g->fillTriangle(bx - 1, by, bx + 3, by, bx - 2, by + 8, bolt);
-  g->fillRect(bx - 2, by - 1, 4, 3, bolt);
+  // Arrow dimensions (as large as possible above the text)
+  int arrowTop = cy - 24;
+  int arrowBottom = cy + 4;
+  int stemHalfW = 6;
+  int headHalfW = 14;
+  int headH = 12;
 
-  // Dynamic green down arrow (charging) or red up arrow (discharging) at the center (cy - 2)
-  int ax = cx, ay = cy - 2;
+  // Draw dynamic green down arrow or red up arrow
   if (charging) {
-    g->fillRect(ax - 1, ay - 6, 3, 6, arrColor);
-    g->fillTriangle(ax - 4, ay, ax + 4, ay, ax, ay + 4, arrColor);
+    // Stem
+    g->fillRect(cx - stemHalfW, arrowTop, stemHalfW * 2, (arrowBottom - headH) - arrowTop, arrColor);
+    // Head
+    g->fillTriangle(cx - headHalfW, arrowBottom - headH, 
+                    cx + headHalfW, arrowBottom - headH, 
+                    cx, arrowBottom, arrColor);
   } else {
-    g->fillTriangle(ax - 4, ay - 2, ax + 4, ay - 2, ax, ay - 6, arrColor);
-    g->fillRect(ax - 1, ay - 2, 3, 6, arrColor);
+    // Stem
+    g->fillRect(cx - stemHalfW, arrowTop + headH, stemHalfW * 2, arrowBottom - (arrowTop + headH), arrColor);
+    // Head
+    g->fillTriangle(cx - headHalfW, arrowTop + headH, 
+                    cx + headHalfW, arrowTop + headH, 
+                    cx, arrowTop, arrColor);
   }
 
-  // Dynamic colored "DC" text at the bottom (cy + 8)
-  g->setFont(NULL); // default tiny font
+  // Integrated yellow lightning bolt in the center of the arrow
+  uint16_t bolt = 0xFFE0;
+  int bx = cx, by = cy - 10;
+  g->fillTriangle(bx + 4, by - 8, bx - 2, by - 8, bx - 4, by + 1, bolt);
+  g->fillTriangle(bx + 4, by - 8, bx - 4, by + 1, bx + 2, by + 1, bolt);
+  g->fillTriangle(bx - 2, by + 1, bx + 4, by + 1, bx - 3, by + 10, bolt);
+  g->fillRect(bx - 3, by, 7, 3, bolt);
+
+  // Dynamic colored "DC" text at the bottom, matching SOH font
+  g->setFont(&FreeSans9pt7b);
   g->setTextSize(1);
   g->setTextColor(txtColor);
-  g->setCursor(cx - 5, cy + 6);
+  
+  int16_t lx, ly;
+  uint16_t lw, lh;
+  g->getTextBounds("DC", 0, 0, &lx, &ly, &lw, &lh);
+  // Center horizontally, place at bottom below arrow
+  g->setCursor(cx - (lw / 2), cy + 26);
   g->print("DC");
 }
 
