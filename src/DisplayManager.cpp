@@ -696,21 +696,40 @@ static void drawIconLightningDC(Arduino_GFX *g, int cx, int cy, uint16_t color) 
   g->print("DC");
 }
 
-// Battery icon with green bars for Available Energy (same shape as SOC battery)
+// Dynamic battery icon for Available Energy
+// <3 kWh: empty, 3-6: 1 red bar, 6-12: 2 orange bars, >=12: 3 green bars
 static void drawIconBatteryKwh(Arduino_GFX *g, int cx, int cy, uint16_t color) {
-  // Battery body (same dimensions as SOC icon)
+  // Battery body (same dimensions as SOC icon), WHITE outline
   int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
-  g->drawRoundRect(bx, by, bw, bh, 4, color);
-  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, color);
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
   // Battery terminal cap (top center)
-  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, color);
-  // 3 green charge bars inside battery body
-  uint16_t barColor = 0x07E0; // Green
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+
+  // Bar dimensions
   int barX = bx + 4, barW = bw - 8, barH = 8, gap = 3;
-  int barStartY = by + bh - 5 - barH; // bottom bar
-  g->fillRect(barX, barStartY, barW, barH, barColor);
-  g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
-  g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
+  int barStartY = by + bh - 5 - barH; // bottom bar position
+
+  float energy = obdAvailEnergy;
+  int barCount = 0;
+  uint16_t barColor = 0x07E0; // default green
+
+  if (energy >= 12.0f) {
+    barCount = 3;
+    barColor = 0x07E0; // Green
+  } else if (energy >= 6.0f) {
+    barCount = 2;
+    barColor = 0xFD20; // Orange
+  } else if (energy >= 3.0f) {
+    barCount = 1;
+    barColor = 0xF800; // Red
+  }
+  // else barCount = 0 (empty)
+
+  // Draw bars from bottom up
+  for (int i = 0; i < barCount; i++) {
+    g->fillRect(barX, barStartY - i * (barH + gap), barW, barH, barColor);
+  }
 }
 
 static DashParam dashParams[] = {
@@ -998,6 +1017,25 @@ void DisplayManager::updateHomeOBD() {
         int cx = x0 + 22;
         int cy = y0 + 26;
         // Clear the icon area and redraw
+        gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
+        const DashParam &p = dashParams[paramIdx];
+        if (p.drawIcon) {
+          p.drawIcon(gfx, cx, cy, p.iconColor);
+        }
+      }
+    }
+
+    // Available Energy icon: redraw when bar level changes
+    if (paramIdx == 15) {
+      static int prevBarLevel = -1;
+      int curLevel = 0;
+      if (obdAvailEnergy >= 12.0f) curLevel = 3;
+      else if (obdAvailEnergy >= 6.0f) curLevel = 2;
+      else if (obdAvailEnergy >= 3.0f) curLevel = 1;
+      if (curLevel != prevBarLevel) {
+        prevBarLevel = curLevel;
+        int cx = x0 + 22;
+        int cy = y0 + 26;
         gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
         const DashParam &p = dashParams[paramIdx];
         if (p.drawIcon) {
