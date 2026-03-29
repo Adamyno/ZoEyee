@@ -15,6 +15,8 @@ public:
     static void showSettings(bool fullRedraw = true);
     static void showSettingsPages(bool fullRedraw = true);
     static void showSettingsAutoScroll(bool fullRedraw = true);
+    static void showSettingsVehicleType(bool fullRedraw = true);
+    static void showSettingsLanguage(bool fullRedraw = true);
     static void showSlotPicker(bool fullRedraw = true);
     static void drawPageIndicator();
     static void restoreBottomRow();

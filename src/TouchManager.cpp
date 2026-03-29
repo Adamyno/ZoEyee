@@ -5,6 +5,7 @@
 #include "WifiManager.h"
 #include "BluetoothManager.h"
 #include "ObdManager.h"
+#include "Lang.h"
 #include <Arduino_GFX_Library.h>
 #include <Wire.h>
 #include <WiFi.h>
@@ -223,10 +224,12 @@ void TouchManager::processGestures() {
                   DisplayManager::showSettingsAutoScroll();
                   break;
                 case 2:
-                  // TODO: STATE_VEHICLE_PICKER
+                  currentState = STATE_VEHICLE_PICKER;
+                  DisplayManager::showSettingsVehicleType();
                   break;
                 case 3:
-                  // TODO: STATE_LANGUAGE_PICKER
+                  currentState = STATE_LANGUAGE_PICKER;
+                  DisplayManager::showSettingsLanguage();
                   break;
               }
             }
@@ -328,6 +331,96 @@ void TouchManager::processGestures() {
             autoScrollInterval--;
             preferences.putUChar("asinterv", autoScrollInterval);
             DisplayManager::showSettingsAutoScroll(false);
+          }
+        }
+        // Edge swipe back
+        if (startX < 30 && deltaX < -60) {
+          currentState = STATE_SETTINGS;
+          DisplayManager::showSettings();
+        }
+        touching = false;
+        return;
+      }
+
+      // === Settings sub-page: Vehicle Type ===
+      if (currentState == STATE_VEHICLE_PICKER) {
+        const int itemH = 42;
+        const int listStartY = 42;
+        int totalItems = vehicleTypeCount;
+        int visibleItems = 3;
+
+        // Up/down swipe → scroll
+        if (abs(deltaX) < 50 && abs(deltaY) > 40) {
+          if (deltaY > 40 && vehiclePickerScroll > 0) {
+            vehiclePickerScroll--;
+            DisplayManager::showSettingsVehicleType(false);
+          } else if (deltaY < -40 && vehiclePickerScroll < totalItems - visibleItems) {
+            vehiclePickerScroll++;
+            DisplayManager::showSettingsVehicleType(false);
+          }
+        }
+
+        // Tap → select or back
+        if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
+          if (startY < 40 && startX < 80) {
+            currentState = STATE_SETTINGS;
+            DisplayManager::showSettings();
+          } else if (startY >= listStartY) {
+            int tappedVis = (startY - listStartY) / itemH;
+            if (tappedVis < visibleItems) {
+              int tappedIdx = vehiclePickerScroll + tappedVis;
+              if (tappedIdx < totalItems) {
+                vehicleType = tappedIdx;
+                preferences.putUChar("cartype", vehicleType);
+                currentState = STATE_SETTINGS;
+                DisplayManager::showSettings();
+              }
+            }
+          }
+        }
+        // Edge swipe back
+        if (startX < 30 && deltaX < -60) {
+          currentState = STATE_SETTINGS;
+          DisplayManager::showSettings();
+        }
+        touching = false;
+        return;
+      }
+
+      // === Settings sub-page: Language ===
+      if (currentState == STATE_LANGUAGE_PICKER) {
+        const int itemH = 42;
+        const int listStartY = 42;
+        int totalItems = languageCount;
+        int visibleItems = 3;
+
+        // Up/down swipe → scroll
+        if (abs(deltaX) < 50 && abs(deltaY) > 40) {
+          if (deltaY > 40 && languagePickerScroll > 0) {
+            languagePickerScroll--;
+            DisplayManager::showSettingsLanguage(false);
+          } else if (deltaY < -40 && languagePickerScroll < totalItems - visibleItems) {
+            languagePickerScroll++;
+            DisplayManager::showSettingsLanguage(false);
+          }
+        }
+
+        // Tap → select or back
+        if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
+          if (startY < 40 && startX < 80) {
+            currentState = STATE_SETTINGS;
+            DisplayManager::showSettings();
+          } else if (startY >= listStartY) {
+            int tappedVis = (startY - listStartY) / itemH;
+            if (tappedVis < visibleItems) {
+              int tappedIdx = languagePickerScroll + tappedVis;
+              if (tappedIdx < totalItems) {
+                currentLanguage = tappedIdx;
+                preferences.putUChar("lang", currentLanguage);
+                currentState = STATE_SETTINGS;
+                DisplayManager::showSettings();
+              }
+            }
           }
         }
         // Edge swipe back
@@ -490,7 +583,7 @@ void TouchManager::processGestures() {
               gfx->setTextColor(YELLOW);
               gfx->setTextSize(1);
               gfx->setCursor(80, 90);
-              gfx->print("Scanning...");
+              gfx->print(L(SCANNING));
               if (wifiAPActive) {
                 WiFi.softAPdisconnect(true);
                 wifiAPActive = false;

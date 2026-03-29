@@ -1,6 +1,7 @@
 #include "DisplayManager.h"
 #include "Config.h"
 #include "Globals.h"
+#include "Lang.h"
 #include <Arduino_GFX_Library.h>
 #include <WiFi.h>
 #include <Fonts/FreeSans12pt7b.h>
@@ -1178,7 +1179,7 @@ void DisplayManager::drawMenu(bool fullRedraw) {
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(125, 35);
-    gfx->println("MENU");
+    gfx->println(L(MENU));
     gfx->drawLine(0, 40, 320, 40, WHITE);
     gfx->setFont(&FreeSans18pt7b);
     gfx->setTextColor(CYAN, BLACK);
@@ -1234,20 +1235,20 @@ void DisplayManager::showBrightness(bool fullRedraw) {
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(84, 35);
-    gfx->println("BRIGHTNESS");
+    gfx->println(L(BRIGHTNESS));
     gfx->drawLine(0, 40, 320, 40, WHITE);
     gfx->drawRect(sliderX, sliderY, sliderW, sliderH, WHITE);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(0x7BEF, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(5, 75);
-    gfx->print("Swipe up/down");
+    gfx->print(L(BRIGHT_1));
     gfx->setCursor(5, 95);
-    gfx->print("anywhere to");
+    gfx->print(L(BRIGHT_2));
     gfx->setCursor(5, 115);
-    gfx->print("adjust");
+    gfx->print(L(BRIGHT_3));
     gfx->setCursor(5, 135);
-    gfx->print("brightness.");
+    gfx->print(L(BRIGHT_4));
   }
   int fillH = map(currentBrightness, 0, 255, 0, sliderH - 4);
   if (fillH > 0)
@@ -1271,7 +1272,7 @@ void DisplayManager::showInfo() {
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
   gfx->setCursor(128, 35);
-  gfx->println("INFO");
+  gfx->println(L(INFO));
   gfx->drawLine(0, 40, 320, 40, WHITE);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
@@ -1279,19 +1280,19 @@ void DisplayManager::showInfo() {
 
   // SW Version
   gfx->setCursor(10, 65);
-  gfx->printf("SW Version: %s", SW_VERSION);
+  gfx->printf(L(FMT_SW_VER), SW_VERSION);
 
   // Flash: free / total
   uint32_t flashFree = ESP.getFreeSketchSpace() / 1024;
   uint32_t flashTotal = (ESP.getSketchSize() + ESP.getFreeSketchSpace()) / 1024;
   gfx->setCursor(10, 95);
-  gfx->printf("Free Flash: %u / %uKB", flashFree, flashTotal);
+  gfx->printf(L(FMT_FLASH), flashFree, flashTotal);
 
   // RAM: free / total
   uint32_t heapFree = ESP.getFreeHeap() / 1024;
   uint32_t heapTotal = ESP.getHeapSize() / 1024;
   gfx->setCursor(10, 125);
-  gfx->printf("Free RAM: %u / %uKB", heapFree, heapTotal);
+  gfx->printf(L(FMT_RAM), heapFree, heapTotal);
 
   // Uptime
   unsigned long uptimeSec = millis() / 1000;
@@ -1299,7 +1300,7 @@ void DisplayManager::showInfo() {
   int mins = (uptimeSec % 3600) / 60;
   int secs = uptimeSec % 60;
   gfx->setCursor(10, 155);
-  gfx->printf("Uptime: %02d:%02d:%02d", hrs, mins, secs);
+  gfx->printf(L(FMT_UPTIME), hrs, mins, secs);
 }
 
 void DisplayManager::drawTopBar(bool softRefresh) {
@@ -1339,14 +1340,14 @@ void DisplayManager::showSettings(bool fullRedraw) {
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(98, 35);
-    gfx->println("SETTINGS");
+    gfx->println(L(SETTINGS));
     gfx->drawLine(0, 40, 320, 40, WHITE);
   }
 
   // Clear list area
   gfx->fillRect(0, listStartY, 314, visibleItems * itemH, BLACK);
 
-  const char* labels[] = {"Pages", "Auto-Scroll", "Car Type", "Language"};
+  const char* labels[] = {L(PAGES), L(AUTO_SCROLL), L(CAR_TYPE), L(LANGUAGE)};
   char valueBuf[24];
 
   for (int vis = 0; vis < visibleItems && (settingsScrollIndex + vis) < totalItems; vis++) {
@@ -1367,7 +1368,7 @@ void DisplayManager::showSettings(bool fullRedraw) {
     gfx->setTextColor(CYAN, BLACK);
     switch (idx) {
       case 0: snprintf(valueBuf, sizeof(valueBuf), "%d", numPages); break;
-      case 1: snprintf(valueBuf, sizeof(valueBuf), "%s", autoScrollEnabled ? "ON" : "OFF"); break;
+      case 1: snprintf(valueBuf, sizeof(valueBuf), "%s", autoScrollEnabled ? L(ON) : L(OFF)); break;
       case 2: snprintf(valueBuf, sizeof(valueBuf), "%s", vehicleTypes[vehicleType]); break;
       case 3: snprintf(valueBuf, sizeof(valueBuf), "%s", languageNames[currentLanguage]); break;
     }
@@ -1402,13 +1403,13 @@ void DisplayManager::showSettingsPages(bool fullRedraw) {
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(110, 35);
-    gfx->print("PAGES");
+    gfx->print(L(PAGES));
     gfx->drawLine(0, 40, 320, 40, WHITE);
 
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(0x7BEF, BLACK);
     gfx->setCursor(55, 70);
-    gfx->print("Number of dashboard pages");
+    gfx->print(L(PAGES_DESC));
 
     // Left/right arrows
     gfx->fillTriangle(60, 110, 80, 95, 80, 125, CYAN);
@@ -1431,7 +1432,7 @@ void DisplayManager::showSettingsPages(bool fullRedraw) {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(0x7BEF, BLACK);
   gfx->setCursor(75, 162);
-  gfx->print("Tap arrows to adjust");
+  gfx->print(L(TAP_ARROWS));
 }
 
 // === Settings sub-page: Auto-Scroll ===
@@ -1443,7 +1444,7 @@ void DisplayManager::showSettingsAutoScroll(bool fullRedraw) {
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(68, 35);
-    gfx->print("AUTO-SCROLL");
+    gfx->print(L(AUTO_SCROLL));
     gfx->drawLine(0, 40, 320, 40, WHITE);
   }
 
@@ -1454,15 +1455,15 @@ void DisplayManager::showSettingsAutoScroll(bool fullRedraw) {
   gfx->setCursor(60, 78);
   if (autoScrollEnabled) {
     gfx->setTextColor(0x07E0, BLACK);
-    gfx->print("ON ");
+    gfx->print(L(ON));
   } else {
     gfx->setTextColor(0xF800, BLACK);
-    gfx->print("OFF");
+    gfx->print(L(OFF));
   }
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(0x7BEF, BLACK);
   gfx->setCursor(120, 78);
-  gfx->print("(tap to toggle)");
+  gfx->print(L(TAP_TOGGLE));
 
   // Interval section
   gfx->fillRect(40, 95, 240, 80, BLACK);
@@ -1470,7 +1471,7 @@ void DisplayManager::showSettingsAutoScroll(bool fullRedraw) {
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(0x7BEF, BLACK);
     gfx->setCursor(60, 115);
-    gfx->print("Interval:");
+    gfx->print(L(INTERVAL));
 
     // Up arrow
     gfx->fillTriangle(220, 100, 210, 112, 230, 112, CYAN);
@@ -1487,6 +1488,128 @@ void DisplayManager::showSettingsAutoScroll(bool fullRedraw) {
 
     // Down arrow
     gfx->fillTriangle(220, 165, 210, 155, 230, 155, CYAN);
+  }
+}
+
+// === Settings sub-page: Vehicle Type ===
+void DisplayManager::showSettingsVehicleType(bool fullRedraw) {
+  const int totalItems = vehicleTypeCount;
+  const int itemH = 42;
+  const int visibleItems = 3;
+  const int listStartY = 42;
+
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    drawTopBar();
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(80, 35);
+    gfx->print(L(CAR_TYPE));
+    gfx->drawLine(0, 40, 320, 40, WHITE);
+  }
+
+  // Clear list area
+  gfx->fillRect(0, listStartY, 314, visibleItems * itemH, BLACK);
+
+  for (int vis = 0; vis < visibleItems && (vehiclePickerScroll + vis) < totalItems; vis++) {
+    int idx = vehiclePickerScroll + vis;
+    int y0 = listStartY + vis * itemH;
+    int textY = y0 + itemH / 2 + 5;
+
+    if (vis > 0) gfx->drawLine(0, y0, 314, y0, 0x2104);
+
+    bool isSelected = (idx == vehicleType);
+
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextSize(1);
+    gfx->setTextColor(isSelected ? CYAN : WHITE, BLACK);
+    gfx->setCursor(35, textY);
+    gfx->print(vehicleTypes[idx]);
+
+    // Draw radio button
+    int cx = 18;
+    int cy = y0 + itemH / 2;
+    if (isSelected) {
+      gfx->fillCircle(cx, cy, 6, CYAN);
+      gfx->drawCircle(cx, cy, 8, WHITE);
+    } else {
+      gfx->drawCircle(cx, cy, 8, 0x7BEF);
+    }
+  }
+
+  // Scroll indicator
+  if (totalItems > visibleItems) {
+    int scrollBarH = visibleItems * itemH - 4;
+    int scrollBarY = listStartY + 2;
+    gfx->fillRect(316, scrollBarY, 4, scrollBarH, 0x2104);
+    int handleH = (visibleItems * scrollBarH) / totalItems;
+    if (handleH < 12) handleH = 12;
+    int handleY = scrollBarY + (vehiclePickerScroll * (scrollBarH - handleH)) / (totalItems - visibleItems);
+    gfx->fillRect(316, handleY, 4, handleH, 0x7BEF);
+  } else {
+    gfx->fillRect(316, listStartY, 4, visibleItems * itemH, BLACK);
+  }
+}
+
+// === Settings sub-page: Language ===
+void DisplayManager::showSettingsLanguage(bool fullRedraw) {
+  const int totalItems = languageCount;
+  const int itemH = 42;
+  const int visibleItems = 3;
+  const int listStartY = 42;
+
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    drawTopBar();
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(80, 35);
+    gfx->print(L(LANGUAGE));
+    gfx->drawLine(0, 40, 320, 40, WHITE);
+  }
+
+  // Clear list area
+  gfx->fillRect(0, listStartY, 314, visibleItems * itemH, BLACK);
+
+  for (int vis = 0; vis < visibleItems && (languagePickerScroll + vis) < totalItems; vis++) {
+    int idx = languagePickerScroll + vis;
+    int y0 = listStartY + vis * itemH;
+    int textY = y0 + itemH / 2 + 5;
+
+    if (vis > 0) gfx->drawLine(0, y0, 314, y0, 0x2104);
+
+    bool isSelected = (idx == currentLanguage);
+
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextSize(1);
+    gfx->setTextColor(isSelected ? CYAN : WHITE, BLACK);
+    gfx->setCursor(35, textY);
+    gfx->print(languageNames[idx]);
+
+    // Draw radio button
+    int cx = 18;
+    int cy = y0 + itemH / 2;
+    if (isSelected) {
+      gfx->fillCircle(cx, cy, 6, CYAN);
+      gfx->drawCircle(cx, cy, 8, WHITE);
+    } else {
+      gfx->drawCircle(cx, cy, 8, 0x7BEF);
+    }
+  }
+
+  // Scroll indicator
+  if (totalItems > visibleItems) {
+    int scrollBarH = visibleItems * itemH - 4;
+    int scrollBarY = listStartY + 2;
+    gfx->fillRect(316, scrollBarY, 4, scrollBarH, 0x2104);
+    int handleH = (visibleItems * scrollBarH) / totalItems;
+    if (handleH < 12) handleH = 12;
+    int handleY = scrollBarY + (languagePickerScroll * (scrollBarH - handleH)) / (totalItems - visibleItems);
+    gfx->fillRect(316, handleY, 4, handleH, 0x7BEF);
+  } else {
+    gfx->fillRect(316, listStartY, 4, visibleItems * itemH, BLACK);
   }
 }
 
@@ -1596,7 +1719,7 @@ void DisplayManager::showSlotPicker(bool fullRedraw) {
       gfx->setTextColor(0x7BEF, isSelected ? 0x0333 : BLACK);
       gfx->setTextSize(1);
       gfx->setCursor(55, y0 + itemH / 2 + 7);
-      gfx->print("EMPTY");
+      gfx->print(L(EMPTY));
     } else {
       int paramIdx = idx - 1;
       const DashParam &p = dashParams[paramIdx];
@@ -1609,7 +1732,7 @@ void DisplayManager::showSlotPicker(bool fullRedraw) {
       gfx->setTextColor(WHITE, isSelected ? 0x0333 : BLACK);
       gfx->setTextSize(1);
       gfx->setCursor(55, y0 + itemH / 2 + 7);
-      gfx->print(p.fullName);
+      gfx->print(L_PARAM(paramIdx));
     }
 
     if (vis < 2) {

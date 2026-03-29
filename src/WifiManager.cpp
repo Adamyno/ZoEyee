@@ -1,5 +1,6 @@
 #include "WifiManager.h"
 #include "DisplayManager.h"
+#include "Lang.h"
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
@@ -11,7 +12,7 @@ void WifiManager::showMenu() {
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
   gfx->setCursor(134, 35);
-  gfx->print("WIFI");
+  gfx->print(L(WIFI));
   gfx->drawLine(0, 40, 320, 40, WHITE);
 
   // AP Mode button
@@ -20,21 +21,21 @@ void WifiManager::showMenu() {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(apColor);
   gfx->setCursor(100, 70);
-  gfx->print(wifiAPActive ? "AP MODE: ON" : "AP MODE: OFF");
+  gfx->print(wifiAPActive ? L(AP_MODE_ON) : L(AP_MODE_OFF));
 
   // Client Menu button
   gfx->drawRoundRect(30, 88, 260, 28, 6, WHITE);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
   gfx->setCursor(85, 108);
-  gfx->print("CLIENT MENU");
+  gfx->print(L(CLIENT_MENU));
 
   // Status button
   gfx->drawRoundRect(30, 126, 260, 28, 6, CYAN);
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(CYAN);
   gfx->setCursor(120, 146);
-  gfx->print("STATUS");
+  gfx->print(L(STATUS));
 }
 
 void WifiManager::showClientMenu() {
@@ -44,7 +45,7 @@ void WifiManager::showClientMenu() {
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
   gfx->setCursor(85, 35);
-  gfx->print("CLIENT MENU");
+  gfx->print(L(CLIENT_MENU));
   gfx->drawLine(0, 40, 320, 40, WHITE);
 
   // Scan button
@@ -52,7 +53,7 @@ void WifiManager::showClientMenu() {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(CYAN);
   gfx->setCursor(75, 70);
-  gfx->print("SCAN NETWORKS");
+  gfx->print(L(SCAN_NETWORKS));
 
   // Save Config checkbox
   gfx->drawRect(30, 92, 20, 20, WHITE);
@@ -62,14 +63,14 @@ void WifiManager::showClientMenu() {
   }
   gfx->setTextColor(WHITE);
   gfx->setCursor(60, 108);
-  gfx->print("Save & Auto-Conn");
+  gfx->print(L(SAVE_AUTO));
 
   // Delete button (only if saved target SSID exists)
   if (preferences.getString("ssid", "").length() > 0) {
     gfx->fillRoundRect(230, 88, 60, 28, 6, RED);
     gfx->setTextColor(WHITE);
     gfx->setCursor(240, 108);
-    gfx->print("DEL");
+    gfx->print(L(DEL));
   }
 
   // Disconnect button
@@ -78,7 +79,7 @@ void WifiManager::showClientMenu() {
   gfx->drawRoundRect(30, 126, 260, 28, 6, disColor);
   gfx->setTextColor(disColor);
   gfx->setCursor(100, 146);
-  gfx->print("DISCONNECT");
+  gfx->print(L(DISCONNECT));
 }
 
 void WifiManager::showList(bool fullRedraw) {
@@ -89,7 +90,7 @@ void WifiManager::showList(bool fullRedraw) {
     gfx->setTextColor(YELLOW);
     gfx->setTextSize(1);
     gfx->setCursor(95, 35);
-    gfx->print("WIFI LIST");
+    gfx->print(L(WIFI_LIST));
     gfx->drawLine(0, 40, 320, 40, WHITE);
   }
 
@@ -97,7 +98,7 @@ void WifiManager::showList(bool fullRedraw) {
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(RED);
     gfx->setCursor(80, 100);
-    gfx->print("No networks found");
+    gfx->print(L(NO_NETWORKS));
     return;
   }
 
@@ -155,7 +156,7 @@ void WifiManager::showList(bool fullRedraw) {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(BLACK);
   gfx->setCursor(120, 151);
-  gfx->print("CONNECT");
+  gfx->print(L(CONNECT));
 }
 
 void WifiManager::showKeyboard() {
@@ -216,7 +217,7 @@ void WifiManager::showKeyboard() {
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(0x7BEF);
   gfx->setCursor(100, btnY + 20);
-  gfx->print("SPACE");
+  gfx->print(L(SPACE_KEY));
 
   // Backspace / Back
   if (wifiPassword.length() == 0) {
@@ -224,13 +225,13 @@ void WifiManager::showKeyboard() {
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(WHITE);
     gfx->setCursor(193, btnY + 20);
-    gfx->print("BACK");
+    gfx->print(L(BACK));
   } else {
     gfx->drawRoundRect(190, btnY, 55, keyH, 4, RED);
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(RED);
     gfx->setCursor(200, btnY + 20);
-    gfx->print("DEL");
+    gfx->print(L(DEL));
   }
 
   // OK button
@@ -249,7 +250,7 @@ void WifiManager::connect() {
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
   gfx->setCursor(70, 80);
-  gfx->print("Connecting...");
+  gfx->print(L(CONNECTING));
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(WHITE);
   gfx->setCursor(50, 110);
@@ -278,7 +279,7 @@ void WifiManager::connect() {
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(GREEN);
     gfx->setCursor(90, 140);
-    gfx->print("Connected!");
+    gfx->print(L(CONNECTED_OK));
     DisplayManager::drawTopBar(); // Update WiFi icon
     wifiTransitionTime = millis() + 1500;
     wifiNextState = STATE_WIFI_STATUS;
@@ -287,7 +288,7 @@ void WifiManager::connect() {
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextColor(RED);
     gfx->setCursor(70, 140);
-    gfx->print("Connection failed!");
+    gfx->print(L(CONN_FAILED));
     wifiTransitionTime = millis() + 2000;
     wifiNextState = STATE_WIFI_MENU;
   }
@@ -300,7 +301,7 @@ void WifiManager::showStatus() {
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
   gfx->setCursor(80, 35);
-  gfx->print("WIFI STATUS");
+  gfx->print(L(WIFI_STATUS));
   gfx->drawLine(0, 40, 320, 40, WHITE);
 
   gfx->setFont(&FreeSans9pt7b);
@@ -309,7 +310,7 @@ void WifiManager::showStatus() {
   if (wifiAPActive) {
     gfx->setTextColor(GREEN);
     gfx->setCursor(10, 65);
-    gfx->print("Mode: Access Point");
+    gfx->print(L(MODE_AP));
 
     gfx->setTextColor(WHITE);
     gfx->setCursor(10, 90);
@@ -321,7 +322,7 @@ void WifiManager::showStatus() {
   } else if (WiFi.status() == WL_CONNECTED) {
     gfx->setTextColor(GREEN);
     gfx->setCursor(10, 65);
-    gfx->print("Mode: Client (Connected)");
+    gfx->print(L(MODE_CLIENT));
 
     gfx->setTextColor(WHITE);
     gfx->setCursor(10, 90);
@@ -331,10 +332,10 @@ void WifiManager::showStatus() {
     gfx->setCursor(10, 140);
     gfx->printf("GW: %s", WiFi.gatewayIP().toString().c_str());
     gfx->setCursor(10, 165);
-    gfx->printf("RSSI: %d dBm", WiFi.RSSI());
+    gfx->printf(L(FMT_RSSI), WiFi.RSSI());
   } else {
     gfx->setTextColor(RED);
     gfx->setCursor(10, 90);
-    gfx->print("Not Connected");
+    gfx->print(L(NOT_CONNECTED));
   }
 }

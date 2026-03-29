@@ -1,6 +1,7 @@
 #include "BluetoothManager.h"
 #include "DisplayManager.h"
 #include "ObdManager.h"
+#include "Lang.h"
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
@@ -14,7 +15,7 @@ void BluetoothManager::showList(bool fullRedraw) {
     gfx->setTextColor(YELLOW, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(100, 35);
-    gfx->println("BT DEVICES");
+    gfx->println(L(BT_DEVICES));
     gfx->drawLine(0, 40, 320, 40, WHITE);
     gfx->fillTriangle(10, 70, 20, 62, 20, 78, CYAN);
     gfx->fillTriangle(310, 70, 300, 62, 300, 78, CYAN);
@@ -24,13 +25,13 @@ void BluetoothManager::showList(bool fullRedraw) {
     gfx->setTextColor(GREEN, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(42, 134);
-    gfx->print("CONNECT");
+    gfx->print(L(CONNECT));
     gfx->fillRoundRect(170, 106, 130, 43, 8, CYAN);
     gfx->fillRoundRect(172, 108, 126, 39, 6, BLACK);
     gfx->setTextColor(CYAN, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(195, 134);
-    gfx->print("DETAILS");
+    gfx->print(L(DETAILS));
   }
   gfx->fillRect(30, 45, 260, 45, BLACK);
   if (btTotalDevices == 0) {
@@ -38,7 +39,7 @@ void BluetoothManager::showList(bool fullRedraw) {
     gfx->setTextColor(RED, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(40, 75);
-    gfx->println("No devices found.");
+    gfx->println(L(NO_DEVICES));
   } else {
     CachedDevice &dev = btDevices[btSelectedDeviceIndex];
     gfx->setTextColor(WHITE, BLACK);
@@ -68,14 +69,14 @@ void BluetoothManager::showList(bool fullRedraw) {
       gfx->setTextColor(BLACK, GREEN);
       gfx->setTextSize(1);
       gfx->setCursor(35, 134);
-      gfx->print("CONNECTED");
+      gfx->print(L(CONNECTED));
     } else {
       gfx->fillRoundRect(22, 108, 126, 39, 6, BLACK);
       gfx->setFont(&FreeSans9pt7b);
       gfx->setTextColor(GREEN, BLACK);
       gfx->setTextSize(1);
       gfx->setCursor(42, 134);
-      gfx->print("CONNECT");
+      gfx->print(L(CONNECT));
     }
 
     int scrollbarY = 165;
@@ -105,7 +106,7 @@ void BluetoothManager::showDeviceInfo() {
   gfx->setTextColor(YELLOW, BLACK);
   gfx->setTextSize(1);
   gfx->setCursor(76, 35);
-  gfx->println("DEVICE DETAILS");
+  gfx->println(L(DEVICE_DETAILS));
   gfx->drawLine(0, 40, 320, 40, WHITE);
   if (btSelectedDeviceIndex >= 0 && btSelectedDeviceIndex < btTotalDevices) {
     CachedDevice &dev = btDevices[btSelectedDeviceIndex];
@@ -113,14 +114,14 @@ void BluetoothManager::showDeviceInfo() {
     gfx->setTextColor(WHITE, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(10, 65);
-    gfx->printf("Name: %s", dev.name.c_str());
+    gfx->printf(L(FMT_NAME), dev.name.c_str());
     gfx->setCursor(10, 95);
-    gfx->printf("MAC : %s", dev.address.c_str());
+    gfx->printf(L(FMT_MAC), dev.address.c_str());
     gfx->setCursor(10, 125);
-    gfx->printf("RSSI: %d dBm", dev.rssi);
+    gfx->printf(L(FMT_RSSI), dev.rssi);
     gfx->setTextColor(CYAN, BLACK);
     gfx->setCursor(10, 165);
-    gfx->println("Swipe Right -> Back");
+    gfx->println(L(SWIPE_BACK));
   }
 }
 
@@ -131,7 +132,7 @@ void BluetoothManager::showStatus() {
   gfx->setTextColor(YELLOW, BLACK);
   gfx->setTextSize(1);
   gfx->setCursor(85, 35);
-  gfx->println("BT STATUS");
+  gfx->println(L(BT_STATUS));
   gfx->drawLine(0, 40, 320, 40, WHITE);
   
   gfx->setFont(&FreeSans9pt7b);
@@ -140,18 +141,18 @@ void BluetoothManager::showStatus() {
   
   if (btTargetName.length() > 0) {
     gfx->setCursor(10, 65);
-    gfx->printf("Device: %s", btTargetName.c_str());
+    gfx->printf(L(FMT_DEVICE), btTargetName.c_str());
   }
   
   if (btTargetMAC.length() > 0) {
     gfx->setCursor(10, 95);
-    gfx->printf("MAC: %s", btTargetMAC.c_str());
+    gfx->printf(L(FMT_MAC2), btTargetMAC.c_str());
   }
 
   // Auto-Reconnect Info
   gfx->setTextColor(CYAN, BLACK);
   gfx->setCursor(10, 125);
-  gfx->println("Status: " + String(isBluetoothConnected ? "Connected" : "Reconnecting..."));
+  gfx->println(isBluetoothConnected ? L(STATUS_CONNECTED) : L(STATUS_RECONNECTING));
 
   // Disconnect button
   bool connected = isBluetoothConnected;
@@ -159,7 +160,7 @@ void BluetoothManager::showStatus() {
   gfx->drawRoundRect(30, 146, 260, 28, 6, disColor);
   gfx->setTextColor(disColor);
   gfx->setCursor(100, 166);
-  gfx->print("DISCONNECT");
+  gfx->print(L(DISCONNECT));
 }
 
 void BluetoothManager::runBLEScan() {
@@ -169,13 +170,13 @@ void BluetoothManager::runBLEScan() {
   gfx->setTextColor(YELLOW);
   gfx->setTextSize(1);
   gfx->setCursor(112, 35);
-  gfx->println("BLE SCAN");
+  gfx->println(L(BLE_SCAN));
   gfx->drawLine(0, 40, 320, 40, WHITE);
   gfx->setFont(&FreeSans18pt7b);
   gfx->setTextColor(WHITE);
   gfx->setTextSize(1);
   gfx->setCursor(75, 95);
-  gfx->println("Scanning...");
+  gfx->println(L(SCANNING));
 
   Serial.println("[BLE] Felkészülés a szkennelésre...");
 
@@ -266,7 +267,7 @@ bool BluetoothManager::connect(int deviceIndex) {
   gfx->setTextColor(YELLOW, BLACK);
   gfx->setTextSize(1);
   gfx->setCursor(85, 75);
-  gfx->print("Connecting...");
+  gfx->print(L(CONNECTING));
 
   NimBLEAddress targetAddr = btDevices[deviceIndex].bleAddress;
   Serial.printf("[BLE] Kapcsolódás: %s [%s]\n", btDevices[deviceIndex].name.c_str(), targetAddr.toString().c_str());
@@ -386,7 +387,7 @@ bool BluetoothManager::connect(int deviceIndex) {
     gfx->setTextColor(RED, BLACK);
     gfx->setTextSize(1);
     gfx->setCursor(40, 75);
-    gfx->print("No OBD service found!");
+    gfx->print(L(NO_OBD));
     delay(2000);
     disconnect();
     return false;
@@ -418,7 +419,7 @@ bool BluetoothManager::connect(int deviceIndex) {
   gfx->setTextColor(YELLOW, BLACK);
   gfx->setTextSize(1);
   gfx->setCursor(70, 75);
-  gfx->print("Verifying OBD...");
+  gfx->print(L(VERIFY_OBD));
 
   delay(500);
   
