@@ -67,6 +67,8 @@ float obdACPressure = -1;
 float obdExtTemp = -99;
 String obd12V = "";
 float obd12VFloat = -1;
+float obdCellVoltageMax = -1;
+float obdCellVoltageMin = -1;
 
 String btTargetMAC = "";
 String btTargetName = "";

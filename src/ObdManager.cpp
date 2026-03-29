@@ -707,7 +707,7 @@ void ObdManager::buildPollList() {
 
     // Track ECU needs
     // ECU mapping: params 0,1,3 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
-    if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3) pageNeedsEVC = true;
+    if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3 || paramIdx == 8) pageNeedsEVC = true;
     if (paramIdx == 2) { pageNeedsHVAC = true; needHvac2121 = true; }
     if (paramIdx == 4) { pageNeedsHVAC = true; needHvac2144 = true; }
     if (paramIdx == 5 || paramIdx == 7) { pageNeedsHVAC = true; needHvac2143 = true; }
@@ -725,6 +725,7 @@ static const char* getEvcCommand(int paramIdx) {
     case 0: return "223206"; // SOH
     case 1: return "222002"; // SOC
     case 3: return "222001"; // Battery Temp
+    case 8: return "229007"; // Max Cell Voltage (first of 2 queries for delta)
     default: return nullptr;
   }
 }
@@ -795,6 +796,18 @@ void ObdManager::processPolling() {
           obdHVBatTemp = raw - 40;
           Serial.printf("[ZOE] Bat Temp = %.0f\u00b0C\n", obdHVBatTemp);
         }
+      } else if (resp.indexOf("629007") >= 0 || resp.indexOf("62 90 07") >= 0) {
+        int raw = parseUDSHex(resp, "629007", 2);
+        if (raw >= 0) {
+          obdCellVoltageMax = raw * 0.000976563f;
+          Serial.printf("[ZOE] Cell V Max = %.3f V\n", obdCellVoltageMax);
+        }
+      } else if (resp.indexOf("629009") >= 0 || resp.indexOf("62 90 09") >= 0) {
+        int raw = parseUDSHex(resp, "629009", 2);
+        if (raw >= 0) {
+          obdCellVoltageMin = raw * 0.000976563f;
+          Serial.printf("[ZOE] Cell V Min = %.3f V\n", obdCellVoltageMin);
+        }
       } else if (resp.endsWith("V")) {
         obd12V = resp;
         // Parse float from "12.4V" style string
@@ -832,8 +845,14 @@ void ObdManager::processPolling() {
     int evcCount = 0;
     for (int i = 0; i < pagePollCount; i++) {
       int p = pagePollList[i];
-      if (p == 0 || p == 1 || p == 3) evcCount++;
+      if (p == 0 || p == 1 || p == 3 || p == 8) evcCount++;
     }
+    // If param 8 (cell delta) is in the list, add an extra EVC step for min cell voltage query
+    bool needsCellMin = false;
+    for (int i = 0; i < pagePollCount; i++) {
+      if (pagePollList[i] == 8) { needsCellMin = true; break; }
+    }
+    if (needsCellMin) evcCount++; // extra step for 229009
     int hvacStep = evcCount; // poll index where HVAC starts
     int atrvStep = hvacStep + (pageNeedsHVAC ? 1 : 0); // ATRV after HVAC
     int totalSteps = atrvStep + 1;
@@ -854,7 +873,7 @@ void ObdManager::processPolling() {
         int evcIdx = 0;
         for (int i = 0; i < pagePollCount; i++) {
           int p = pagePollList[i];
-          if (p == 0 || p == 1 || p == 3) {
+          if (p == 0 || p == 1 || p == 3 || p == 8) {
             if (evcIdx == obdPollIndex) {
               const char *cmd = getEvcCommand(p);
               if (cmd) sendCommand(cmd);
@@ -862,6 +881,10 @@ void ObdManager::processPolling() {
             }
             evcIdx++;
           }
+        }
+        // Check if this is the extra cell min voltage step
+        if (evcIdx == 0 && needsCellMin && obdPollIndex == evcCount - 1) {
+          sendCommand("229009"); // Min Cell Voltage
         }
       } else if (obdPollIndex == hvacStep && pageNeedsHVAC) {
         // Start HVAC state machine

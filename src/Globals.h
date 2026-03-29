@@ -121,6 +121,8 @@ extern float obdACPressure;
 extern float obdExtTemp;
 extern String obd12V;
 extern float obd12VFloat;
+extern float obdCellVoltageMax;
+extern float obdCellVoltageMin;
 
 extern String btTargetMAC;
 extern String btTargetName;

@@ -530,6 +530,30 @@ static void drawIconOutdoorThermo(Arduino_GFX *g, int cx, int cy, uint16_t color
   g->drawLine(cx + 6, cy + 6,  cx + 10, cy + 6,  tick);
 }
 
+static void drawIconCellDelta(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Battery outline (same as SOC/BatTemp)
+  int bx = cx - 14, by = cy - 16, bw = 28, bh = 40;
+  g->drawRoundRect(bx, by, bw, bh, 4, WHITE);
+  g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
+  // Battery terminal cap
+  g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+  // 3 cyan bars inside
+  uint16_t barColor = 0x03B7;
+  int barX = bx + 4, barW = bw - 8, barH = 8, gap = 3;
+  int barStartY = by + bh - 5 - barH;
+  g->fillRect(barX, barStartY, barW, barH, barColor);
+  g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
+  g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
+  // Up arrow (left side, green)
+  uint16_t upColor = 0x07E0; // Green
+  g->fillTriangle(cx - 7, cy - 2, cx - 11, cy + 6, cx - 3, cy + 6, upColor);
+  g->fillRect(cx - 9, cy + 6, 5, 8, upColor);
+  // Down arrow (right side, red)
+  uint16_t dnColor = 0xF800; // Red
+  g->fillTriangle(cx + 7, cy + 14, cx + 3, cy + 6, cx + 11, cy + 6, dnColor);
+  g->fillRect(cx + 5, cy - 2, 5, 8, dnColor);
+}
+
 static DashParam dashParams[] = {
   // label  fullName          unit   sentinel isInt dec color   drawIcon              getValueColor     ecuId
   {"SOH",  "Battery SOH",    "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite,       0},
@@ -540,6 +564,7 @@ static DashParam dashParams[] = {
   {"BAR",  "AC Pressure",    "",     -1,  false, 1, 0xB7FF, drawIconSnowflake,      colorACPressure,  1},
   {"",     "12V Battery",    "",     -1,  false, 1, 0xFD20, drawIcon12VBattery,     colorWhite,       2},
   {"OUT",  "Ext. Temp",      "\xB0""C", -99, false, 0, 0x07FF, drawIconOutdoorThermo,  colorWhite,       1},
+  {"",     "Cell Delta V",   "mV",  -1,  false, 0, 0xFFFF, drawIconCellDelta,      colorWhite,       0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
@@ -554,6 +579,11 @@ static float getParamValue(int paramIndex) {
     case 5: return obdACPressure;
     case 6: return obd12VFloat;
     case 7: return obdExtTemp;
+    case 8: {
+      // Delta cell voltage in mV
+      if (obdCellVoltageMax < 0 || obdCellVoltageMin < 0) return -1;
+      return (obdCellVoltageMax - obdCellVoltageMin) * 1000.0f;
+    }
     default: return -999;
   }
 }
@@ -643,7 +673,7 @@ void DisplayManager::showHome() {
       if (paramIdx == 2) {
         // "IN" label rotated 90° (small built-in font, white, up 8px from 35)
         gfx->setRotation(0);
-        int px = 172 - 1 - (y0 + 43);
+        int px = 172 - 1 - (y0 + 28);
         int py = x0 + 2;
         gfx->setFont(NULL);
         gfx->setTextColor(WHITE);
@@ -654,7 +684,7 @@ void DisplayManager::showHome() {
       } else if (paramIdx == 7) {
         // "OUT" label rotated 90° (small built-in font, white, up 4px from 35)
         gfx->setRotation(0);
-        int px = 172 - 1 - (y0 + 39);
+        int px = 172 - 1 - (y0 + 32);
         int py = x0 + 2;
         gfx->setFont(NULL);
         gfx->setTextColor(WHITE);
