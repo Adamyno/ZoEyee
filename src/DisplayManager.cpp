@@ -967,6 +967,25 @@ void DisplayManager::updateHomeOBD() {
       gfx->print(p.label);
       gfx->setRotation(1);
     }
+
+    // DC Power icon: redraw when charging direction changes
+    if (paramIdx == 14) {
+      static bool prevDCCharging = false;
+      static bool prevDCInit = false;
+      bool nowCharging = (obdDCPower > 0);
+      if (!prevDCInit || nowCharging != prevDCCharging) {
+        prevDCCharging = nowCharging;
+        prevDCInit = true;
+        int cx = x0 + 22;
+        int cy = y0 + 26;
+        // Clear the icon area and redraw
+        gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
+        const DashParam &p = dashParams[paramIdx];
+        if (p.drawIcon) {
+          p.drawIcon(gfx, cx, cy, p.iconColor);
+        }
+      }
+    }
   }
 
   drawStatusLED();
