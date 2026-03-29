@@ -284,6 +284,13 @@ static uint16_t colorDCPower(float v) {
   return 0xFA08; // Light red (discharging)
 }
 
+// Insulation resistance color: <50 green, 50-95 orange, >=95 red
+static uint16_t colorInsulation(float v) {
+  if (v < 50.0f) return 0x07E0;  // Green
+  if (v < 95.0f) return 0xFD20;  // Orange
+  return 0xF800;                  // Red
+}
+
 // Battery temp: <22 light blue, 22-32 green, 33-36 orange, 37+ red
 static uint16_t colorBatTemp(float v) {
   static const ColorStop stops[] = {
@@ -814,7 +821,7 @@ static DashParam dashParams[] = {
   {"",     "Avail Energy",   "kWh",-1,   false, 1, 0x07E0, drawIconBatteryKwh,     colorWhite,       0},
   {"",     "HV Voltage",     "V",  -1,   false, 1, 0xFFE0, drawIconBatteryHV,      colorWhite,       0},
   {"",     "AC Phase",       "P",  -1,   true,  0, 0xFFE0, drawIconACPlug,         colorWhite,       0},
-  {"",     "Insulation",     "k\xEA", -1, true,  0, 0x07E0, drawIconGround,         colorWhite,       0},
+  {"",     "Insulation",     "\xEA", -1, true,  0, 0x07E0, drawIconGround,         colorInsulation,  0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 

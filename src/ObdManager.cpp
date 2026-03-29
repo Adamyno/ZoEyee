@@ -993,8 +993,8 @@ void ObdManager::processPolling() {
       } else if (resp.indexOf("6233EE") >= 0 || resp.indexOf("62 33 EE") >= 0) {
         int raw = parseUDSHex(resp, "6233EE", 2);
         if (raw >= 0) {
-          obdInsulationRes = raw * 0.1f; // raw * 100 Ohm / 1000 = kΩ
-          Serial.printf("[ZOE] Insulation = %.0f kΩ\n", obdInsulationRes);
+          obdInsulationRes = raw * 100.0f; // raw * 100 = Ohm
+          Serial.printf("[ZOE] Insulation = %.0f Ohm\n", obdInsulationRes);
         }
       } else if (resp.indexOf("621417") >= 0 || resp.indexOf("62 14 17") >= 0) {
         int raw = parseUDSHex(resp, "621417", 2);
