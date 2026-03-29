@@ -847,7 +847,7 @@ void ObdManager::buildPollList() {
     // Track ECU needs
     // ECU mapping: params 0,1,3,11 = EVC; params 2,4,5,7 = HVAC; param 6 = ATRV (general)
     if (paramIdx == 0 || paramIdx == 1 || paramIdx == 3 || paramIdx == 11) pageNeedsEVC = true;
-    if (paramIdx == 14 || paramIdx == 15 || paramIdx == 16) pageNeedsEVC = true; // DC Power, Available Energy, HV Voltage need EVC
+    if (paramIdx == 14 || paramIdx == 15 || paramIdx == 16 || paramIdx == 17 || paramIdx == 18) pageNeedsEVC = true;
     if (paramIdx == 8 || paramIdx == 9 || paramIdx == 10 || paramIdx == 13) pageNeedsLBC = true;
     if (paramIdx == 2) { pageNeedsHVAC = true; needHvac2121 = true; }
     if (paramIdx == 4) { pageNeedsHVAC = true; needHvac2144 = true; }
@@ -871,6 +871,8 @@ static const char* getEvcCommand(int paramIdx) {
     case 14: return "223203"; // HV Voltage (first of 2-step: voltage then current)
     case 15: return "22320C"; // Available discharge Energy
     case 16: return "223203"; // HV Voltage (standalone)
+    case 17: return "2233BA"; // AC Phase (external power supply type)
+    case 18: return "2233EE"; // Insulation Resistance
     case 99: return "223204"; // HV Current (shadow step for DC Power calc)
     default: return nullptr;
   }
@@ -979,6 +981,21 @@ void ObdManager::processPolling() {
           obdAvailEnergy = raw * 0.005f;
           Serial.printf("[ZOE] Available Energy = %.1f kWh\n", obdAvailEnergy);
         }
+      } else if (resp.indexOf("6233BA") >= 0 || resp.indexOf("62 33 BA") >= 0) {
+        int raw = parseUDSHex(resp, "6233BA", 1);
+        if (raw >= 0) {
+          int phase = raw & 0x03;
+          // 0=NoExtEnergy, 1=Slow(1-phase), 2=Quick(3-phase)
+          if (phase == 2) obdACPhase = 3;
+          else obdACPhase = phase;
+          Serial.printf("[ZOE] AC Phase = %.0f\n", obdACPhase);
+        }
+      } else if (resp.indexOf("6233EE") >= 0 || resp.indexOf("62 33 EE") >= 0) {
+        int raw = parseUDSHex(resp, "6233EE", 2);
+        if (raw >= 0) {
+          obdInsulationRes = raw * 0.1f; // raw * 100 Ohm / 1000 = kΩ
+          Serial.printf("[ZOE] Insulation = %.0f kΩ\n", obdInsulationRes);
+        }
       } else if (resp.indexOf("621417") >= 0 || resp.indexOf("62 14 17") >= 0) {
         int raw = parseUDSHex(resp, "621417", 2);
         if (raw >= 0) {
@@ -1029,7 +1046,7 @@ void ObdManager::processPolling() {
     int evcCount = 0;
     for (int i = 0; i < pagePollCount; i++) {
       int p = pagePollList[i];
-      if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14 || p == 15 || p == 16) evcCount++;
+      if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14 || p == 15 || p == 16 || p == 17 || p == 18) evcCount++;
       if (p == 14) evcCount++; // param 14 needs 2 EVC steps (voltage + current)
     }
     
@@ -1061,7 +1078,7 @@ void ObdManager::processPolling() {
         int evcCmdCount = 0;
         for (int i = 0; i < pagePollCount && evcCmdCount < 30; i++) {
           int p = pagePollList[i];
-          if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14 || p == 15 || p == 16) {
+          if (p == 0 || p == 1 || p == 3 || p == 11 || p == 14 || p == 15 || p == 16 || p == 17 || p == 18) {
             evcCmds[evcCmdCount++] = p;
             if (p == 14) evcCmds[evcCmdCount++] = 99; // shadow: HV Current
           }

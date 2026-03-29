@@ -85,7 +85,7 @@ struct DashSlot {
   int paramIndex;     // Index into DisplayManager's parameter register
 };
 
-#define MAX_DASH_PARAMS 17
+#define MAX_DASH_PARAMS 19
 extern DashSlot dashPages[MAX_PAGES][6];
 extern int currentPage;
 extern int numPages;
@@ -154,6 +154,8 @@ extern float obdHVBatVoltage;
 extern float obdHVBatCurrent;
 extern float obdDCPower;
 extern float obdAvailEnergy;
+extern float obdACPhase;
+extern float obdInsulationRes;
 
 extern String btTargetMAC;
 extern String btTargetName;

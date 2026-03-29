@@ -765,6 +765,35 @@ static void drawIconBatteryHV(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->fillRect(barX, by + bh - 8, barW, 3, barColor);
 }
 
+// Power plug icon with "AC" text for AC Phase module
+static void drawIconACPlug(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Two prongs at the top
+  g->fillRect(cx - 7, cy - 20, 4, 14, color);
+  g->fillRect(cx + 3, cy - 20, 4, 14, color);
+  // Plug body (rounded rectangle)
+  g->fillRoundRect(cx - 11, cy - 8, 22, 14, 3, color);
+  // Cord going down
+  g->fillRect(cx - 2, cy + 6, 4, 10, color);
+  // "AC" text below
+  g->setFont(NULL);
+  g->setTextSize(1);
+  g->setTextColor(color);
+  int lw = 12; // approx width of "AC" in 6px font
+  g->setCursor(cx - (lw / 2), cy + 20);
+  g->print("AC");
+}
+
+// Ground/Earth symbol icon for Insulation Resistance
+static void drawIconGround(Arduino_GFX *g, int cx, int cy, uint16_t color) {
+  // Vertical line from top
+  g->drawLine(cx, cy - 18, cx, cy - 4, color);
+  g->drawLine(cx + 1, cy - 18, cx + 1, cy - 4, color);
+  // Three horizontal lines, decreasing width
+  g->fillRect(cx - 14, cy - 4, 28, 3, color);  // longest
+  g->fillRect(cx - 9,  cy + 3, 18, 3, color);   // medium
+  g->fillRect(cx - 5,  cy + 10, 10, 3, color);  // shortest
+}
+
 static DashParam dashParams[] = {
   // label  fullName          unit   sentinel isInt dec color   drawIcon              getValueColor     ecuId
   {"SOH",  "Battery SOH",    "%",    -1,  true,  0, 0xF800, drawIconHeart,          colorWhite,       0},
@@ -784,6 +813,8 @@ static DashParam dashParams[] = {
   {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorDCPower,     0},
   {"",     "Avail Energy",   "kWh",-1,   false, 1, 0x07E0, drawIconBatteryKwh,     colorWhite,       0},
   {"",     "HV Voltage",     "V",  -1,   false, 1, 0xFFE0, drawIconBatteryHV,      colorWhite,       0},
+  {"",     "AC Phase",       "P",  -1,   true,  0, 0xFFE0, drawIconACPlug,         colorWhite,       0},
+  {"",     "Insulation",     "k\xEA", -1, true,  0, 0x07E0, drawIconGround,         colorWhite,       0},
 };
 static const int DASH_PARAM_COUNT = sizeof(dashParams) / sizeof(dashParams[0]);
 
@@ -813,6 +844,8 @@ static float getParamValue(int paramIndex) {
       return (obdDCPower < 0) ? -obdDCPower : obdDCPower; // Absolute value, icons indicate direction
     case 15: return obdAvailEnergy;
     case 16: return obdHVBatVoltage;
+    case 17: return obdACPhase;        // 0=None, 1=1-phase, 3=3-phase
+    case 18: return obdInsulationRes;  // kΩ
     default: return -999;
   }
 }

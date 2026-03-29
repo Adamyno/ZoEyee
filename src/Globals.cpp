@@ -76,6 +76,8 @@ float obdHVBatVoltage = -1;
 float obdHVBatCurrent = -999;
 float obdDCPower = -999;
 float obdAvailEnergy = -1;
+float obdACPhase = -1;
+float obdInsulationRes = -1;
 
 String btTargetMAC = "";
 String btTargetName = "";
