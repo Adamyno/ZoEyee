@@ -364,25 +364,21 @@ static void drawIconBatterySOC(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
   // Battery terminal cap (top center)
   g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+  // 3 light blue charge bars inside battery body
+  //uint16_t barColor = 0x653F;  // Light blue
+  uint16_t barColor = 0x03B7;  // Cyan
+  int barX = bx + 4, barW = bw - 8, barH = 8, gap = 3;
+  int barStartY = by + bh - 5 - barH;  // bottom bar
+  g->fillRect(barX, barStartY, barW, barH, barColor);
+  g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
+  g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
   // Yellow lightning bolt ⚡ drawn as a polygon (zigzag shape)
-  // Classic bolt: top-right → middle-left → jog right → bottom-left
-  uint16_t bolt = 0xFFE0;
-  //        A(cx+4,cy-12)
-  //       /|
-  //      / |
-  //     /  |
-  //  D(cx-6,cy)---C(cx+2,cy)
-  //               |
-  //  E(cx-2,cy+1)-F(cx+6,cy+1)
-  //    \  |
-  //     \ |
-  //      \|
-  //     G(cx-4,cy+16)
-  // Upper part: A-B-C-D quadrilateral as 2 triangles
-  g->fillTriangle(cx + 4, cy - 12, cx - 2, cy - 12, cx - 6, cy, bolt);  // A-B-D
-  g->fillTriangle(cx + 4, cy - 12, cx - 6, cy, cx + 2, cy, bolt);       // A-D-C
-  // Lower part: E-F-G as triangle
-  g->fillTriangle(cx - 2, cy + 1, cx + 6, cy + 1, cx - 4, cy + 16, bolt); // E-F-G
+  uint16_t bolt = 0xFFE0; // Yellow
+  // Upper part
+  g->fillTriangle(cx + 4, cy - 12, cx - 2, cy - 12, cx - 6, cy, bolt);
+  g->fillTriangle(cx + 4, cy - 12, cx - 6, cy, cx + 2, cy, bolt);
+  // Lower part
+  g->fillTriangle(cx - 2, cy + 1, cx + 6, cy + 1, cx - 4, cy + 16, bolt);
   // Fill the connection area between upper and lower
   g->fillRect(cx - 4, cy - 1, 8, 4, bolt);
 }
@@ -413,6 +409,15 @@ static void drawIconBatteryThermo(Arduino_GFX *g, int cx, int cy, uint16_t color
   g->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 3, WHITE);
   // Battery terminal cap
   g->fillRoundRect(cx - 5, by - 4, 10, 5, 2, WHITE);
+
+  // 3 cyan charge bars inside battery body (matching SOC style)
+  uint16_t barColor = 0x03B7;  // Cyan
+  int barX = bx + 4, barW = bw - 8, barH = 8, gap = 3;
+  int barStartY = by + bh - 5 - barH;  // bottom bar
+  g->fillRect(barX, barStartY, barW, barH, barColor);
+  g->fillRect(barX, barStartY - barH - gap, barW, barH, barColor);
+  g->fillRect(barX, barStartY - 2 * (barH + gap), barW, barH, barColor);
+
   // Detailed thermometer inside battery (white + bright red)
   uint16_t thOuter = WHITE;   // White thermometer body
   uint16_t thInner = 0xF800;  // Bright red mercury
