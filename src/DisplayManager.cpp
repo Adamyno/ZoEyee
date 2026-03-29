@@ -782,12 +782,14 @@ static void drawIconACPlug(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->fillRoundRect(cx - 11, cy - 8, 22, 14, 3, gray);
   // Cord going down (light gray)
   g->fillRect(cx - 2, cy + 6, 4, 10, gray);
-  // "AC" text below
-  g->setFont(NULL);
+  // "AC" text below (larger, matching DC style)
+  g->setFont(&FreeSans9pt7b);
   g->setTextSize(1);
   g->setTextColor(color);
-  int lw = 12;
-  g->setCursor(cx - (lw / 2), cy + 20);
+  int16_t lx, ly;
+  uint16_t lw, lh;
+  g->getTextBounds("AC", 0, 0, &lx, &ly, &lw, &lh);
+  g->setCursor(cx - (lw / 2), cy + 28);
   g->print("AC");
 }
 
