@@ -1346,107 +1346,39 @@ void DisplayManager::showSettings(bool fullRedraw) {
   // Clear list area
   gfx->fillRect(0, listStartY, 314, visibleItems * itemH, BLACK);
 
+  const char* labels[] = {"Pages", "Auto-Scroll", "Car Type", "Language"};
+  char valueBuf[24];
+
   for (int vis = 0; vis < visibleItems && (settingsScrollIndex + vis) < totalItems; vis++) {
     int idx = settingsScrollIndex + vis;
     int y0 = listStartY + vis * itemH;
     int textY = y0 + itemH / 2 + 5;
 
-    // Row separator
-    if (vis > 0) {
-      gfx->drawLine(0, y0, 314, y0, 0x2104);
-    }
+    if (vis > 0) gfx->drawLine(0, y0, 314, y0, 0x2104);
 
+    // Label
     gfx->setFont(&FreeSans9pt7b);
     gfx->setTextSize(1);
+    gfx->setTextColor(WHITE, BLACK);
+    gfx->setCursor(10, textY);
+    gfx->print(labels[idx]);
 
+    // Value
+    gfx->setTextColor(CYAN, BLACK);
     switch (idx) {
-      case 0: { // Pages
-        gfx->setTextColor(WHITE, BLACK);
-        gfx->setCursor(10, textY);
-        gfx->print("Pages");
-        // Left arrow
-        gfx->fillTriangle(180, y0 + itemH/2, 192, y0 + itemH/2 - 8, 192, y0 + itemH/2 + 8, CYAN);
-        // Number
-        gfx->setFont(&FreeSans12pt7b);
-        gfx->setTextColor(WHITE, BLACK);
-        int16_t tx, ty; uint16_t tw, th;
-        char numBuf[4];
-        snprintf(numBuf, sizeof(numBuf), "%d", numPages);
-        gfx->getTextBounds(numBuf, 0, 0, &tx, &ty, &tw, &th);
-        gfx->setCursor(220 - tw/2, textY + 3);
-        gfx->print(numBuf);
-        // Right arrow
-        gfx->fillTriangle(260, y0 + itemH/2, 248, y0 + itemH/2 - 8, 248, y0 + itemH/2 + 8, CYAN);
-        break;
-      }
-      case 1: { // Auto-Scroll
-        gfx->setTextColor(WHITE, BLACK);
-        gfx->setCursor(10, textY);
-        gfx->print("Auto-Scroll");
-        // Checkbox
-        int cbX = 165, cbY = y0 + itemH/2 - 7, cbS = 14;
-        gfx->drawRect(cbX, cbY, cbS, cbS, WHITE);
-        if (autoScrollEnabled) {
-          gfx->drawLine(cbX + 2, cbY + 7, cbX + 5, cbY + 11, 0x07E0);
-          gfx->drawLine(cbX + 5, cbY + 11, cbX + 11, cbY + 3, 0x07E0);
-          gfx->drawLine(cbX + 3, cbY + 7, cbX + 6, cbY + 11, 0x07E0);
-          gfx->drawLine(cbX + 6, cbY + 11, cbX + 12, cbY + 3, 0x07E0);
-        }
-        // Interval value with arrows
-        if (autoScrollEnabled) {
-          int ivX = 230, ivCY = y0 + itemH/2;
-          // Up arrow
-          gfx->fillTriangle(ivX, ivCY - 14, ivX - 6, ivCY - 8, ivX + 6, ivCY - 8, CYAN);
-          // Number
-          gfx->setFont(&FreeSans9pt7b);
-          gfx->setTextColor(WHITE, BLACK);
-          char sBuf[6];
-          snprintf(sBuf, sizeof(sBuf), "%ds", autoScrollInterval);
-          int16_t sx, sy; uint16_t sw, sh;
-          gfx->getTextBounds(sBuf, 0, 0, &sx, &sy, &sw, &sh);
-          gfx->setCursor(ivX - sw/2, ivCY + 5);
-          gfx->print(sBuf);
-          // Down arrow
-          gfx->fillTriangle(ivX, ivCY + 16, ivX - 6, ivCY + 10, ivX + 6, ivCY + 10, CYAN);
-        } else {
-          gfx->setFont(&FreeSans9pt7b);
-          gfx->setTextColor(0x7BEF, BLACK);
-          gfx->setCursor(190, textY);
-          gfx->print("OFF");
-        }
-        break;
-      }
-      case 2: { // Car Type
-        gfx->setTextColor(WHITE, BLACK);
-        gfx->setCursor(10, textY);
-        gfx->print("Car Type");
-        // Current type name (truncated)
-        gfx->setFont(NULL);
-        gfx->setTextSize(1);
-        gfx->setTextColor(CYAN, BLACK);
-        gfx->setCursor(140, y0 + itemH/2 - 3);
-        gfx->print(vehicleTypes[vehicleType]);
-        // Arrow indicator
-        gfx->setFont(&FreeSans9pt7b);
-        gfx->setTextColor(CYAN, BLACK);
-        gfx->setCursor(300, textY);
-        gfx->print(">");
-        break;
-      }
-      case 3: { // Language
-        gfx->setTextColor(WHITE, BLACK);
-        gfx->setCursor(10, textY);
-        gfx->print("Language");
-        // Current language name
-        gfx->setTextColor(CYAN, BLACK);
-        gfx->setCursor(200, textY);
-        gfx->print(languageNames[currentLanguage]);
-        // Arrow indicator
-        gfx->setCursor(300, textY);
-        gfx->print(">");
-        break;
-      }
+      case 0: snprintf(valueBuf, sizeof(valueBuf), "%d", numPages); break;
+      case 1: snprintf(valueBuf, sizeof(valueBuf), "%s", autoScrollEnabled ? "ON" : "OFF"); break;
+      case 2: snprintf(valueBuf, sizeof(valueBuf), "%s", vehicleTypes[vehicleType]); break;
+      case 3: snprintf(valueBuf, sizeof(valueBuf), "%s", languageNames[currentLanguage]); break;
     }
+    int16_t vx, vy; uint16_t vw, vh2;
+    gfx->getTextBounds(valueBuf, 0, 0, &vx, &vy, &vw, &vh2);
+    gfx->setCursor(280 - vw, textY);
+    gfx->print(valueBuf);
+    // Arrow ">"
+    gfx->setTextColor(0x7BEF, BLACK);
+    gfx->setCursor(295, textY);
+    gfx->print(">");
   }
 
   // Scroll indicator
@@ -1458,6 +1390,103 @@ void DisplayManager::showSettings(bool fullRedraw) {
     if (handleH < 12) handleH = 12;
     int handleY = scrollBarY + (settingsScrollIndex * (scrollBarH - handleH)) / (totalItems - visibleItems);
     gfx->fillRect(316, handleY, 4, handleH, 0x7BEF);
+  }
+}
+
+// === Settings sub-page: Pages ===
+void DisplayManager::showSettingsPages(bool fullRedraw) {
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    drawTopBar();
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(110, 35);
+    gfx->print("PAGES");
+    gfx->drawLine(0, 40, 320, 40, WHITE);
+
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(0x7BEF, BLACK);
+    gfx->setCursor(55, 70);
+    gfx->print("Number of dashboard pages");
+
+    // Left/right arrows
+    gfx->fillTriangle(60, 110, 80, 95, 80, 125, CYAN);
+    gfx->fillTriangle(260, 110, 240, 95, 240, 125, CYAN);
+  }
+
+  // Clear number area
+  gfx->fillRect(90, 80, 140, 60, BLACK);
+  gfx->setFont(&FreeSans24pt7b);
+  gfx->setTextColor(WHITE, BLACK);
+  gfx->setTextSize(1);
+  int16_t tx, ty; uint16_t tw, th;
+  char nb[4];
+  snprintf(nb, sizeof(nb), "%d", numPages);
+  gfx->getTextBounds(nb, 0, 0, &tx, &ty, &tw, &th);
+  gfx->setCursor(160 - tw/2, 125);
+  gfx->print(nb);
+
+  gfx->fillRect(60, 145, 200, 25, BLACK);
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF, BLACK);
+  gfx->setCursor(75, 162);
+  gfx->print("Tap arrows to adjust");
+}
+
+// === Settings sub-page: Auto-Scroll ===
+void DisplayManager::showSettingsAutoScroll(bool fullRedraw) {
+  if (fullRedraw) {
+    gfx->fillScreen(BLACK);
+    drawTopBar();
+    gfx->setFont(&FreeSans12pt7b);
+    gfx->setTextColor(YELLOW, BLACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(68, 35);
+    gfx->print("AUTO-SCROLL");
+    gfx->drawLine(0, 40, 320, 40, WHITE);
+  }
+
+  // Toggle area
+  gfx->fillRect(40, 50, 240, 40, BLACK);
+  gfx->setFont(&FreeSans12pt7b);
+  gfx->setTextSize(1);
+  gfx->setCursor(60, 78);
+  if (autoScrollEnabled) {
+    gfx->setTextColor(0x07E0, BLACK);
+    gfx->print("ON ");
+  } else {
+    gfx->setTextColor(0xF800, BLACK);
+    gfx->print("OFF");
+  }
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(0x7BEF, BLACK);
+  gfx->setCursor(120, 78);
+  gfx->print("(tap to toggle)");
+
+  // Interval section
+  gfx->fillRect(40, 95, 240, 80, BLACK);
+  if (autoScrollEnabled) {
+    gfx->setFont(&FreeSans9pt7b);
+    gfx->setTextColor(0x7BEF, BLACK);
+    gfx->setCursor(60, 115);
+    gfx->print("Interval:");
+
+    // Up arrow
+    gfx->fillTriangle(220, 100, 210, 112, 230, 112, CYAN);
+
+    // Number
+    gfx->setFont(&FreeSans24pt7b);
+    gfx->setTextColor(WHITE, BLACK);
+    char sBuf[6];
+    snprintf(sBuf, sizeof(sBuf), "%ds", autoScrollInterval);
+    int16_t sx, sy; uint16_t sw, sh;
+    gfx->getTextBounds(sBuf, 0, 0, &sx, &sy, &sw, &sh);
+    gfx->setCursor(220 - sw/2, 148);
+    gfx->print(sBuf);
+
+    // Down arrow
+    gfx->fillTriangle(220, 165, 210, 155, 230, 155, CYAN);
   }
 }
 

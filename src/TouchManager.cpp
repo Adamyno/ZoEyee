@@ -57,7 +57,8 @@ void TouchManager::processGestures() {
     int deltaY = ty - startY;
 
     if (abs(deltaY) > 10 && abs(deltaX) < 40 &&
-        currentState != STATE_SLOT_PICKER && currentState != STATE_SETTINGS) {
+        currentState != STATE_SLOT_PICKER && currentState != STATE_SETTINGS &&
+        currentState != STATE_SETTINGS_PAGES && currentState != STATE_SETTINGS_AUTOSCROLL) {
       isSwipingBrightness = true;
       int newBright = currentBrightness - deltaY;
       newBright = constrain(newBright, 0, 255);
@@ -185,14 +186,14 @@ void TouchManager::processGestures() {
         return;
       }
 
-      // === Settings: scrollable list handler ===
+      // === Settings: scrollable menu list ===
       if (currentState == STATE_SETTINGS) {
         const int listStartY = 42;
         const int itemH = 42;
         const int totalItems = 4;
         const int visibleItems = 3;
 
-        // Up/down swipe → scroll list
+        // Up/down swipe → scroll
         if (abs(deltaX) < 50 && abs(deltaY) > 40) {
           if (deltaY > 40 && settingsScrollIndex > 0) {
             settingsScrollIndex--;
@@ -203,68 +204,30 @@ void TouchManager::processGestures() {
           }
         }
 
-        // Tap handling
+        // Tap → navigate to sub-page
         if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
-          // Back button (top-left)
           if (startY < 40 && startX < 80) {
             currentState = STATE_MENU;
             DisplayManager::drawMenu();
-          }
-          // Determine which row was tapped
-          else if (startY >= listStartY) {
+          } else if (startY >= listStartY) {
             int tappedVis = (startY - listStartY) / itemH;
             if (tappedVis < visibleItems) {
               int tappedIdx = settingsScrollIndex + tappedVis;
-              int rowY = listStartY + tappedVis * itemH;
-
               switch (tappedIdx) {
-                case 0: { // Pages — tap left/right arrows
-                  if (startX >= 170 && startX <= 200 && numPages > 1) {
-                    numPages--;
-                    if (currentPage >= numPages) currentPage = numPages - 1;
-                    preferences.putUChar("pages", numPages);
-                    DisplayManager::showSettings(false);
-                  } else if (startX >= 240 && startX <= 270 && numPages < MAX_PAGES) {
-                    numPages++;
-                    preferences.putUChar("pages", numPages);
-                    DisplayManager::showSettings(false);
-                  }
+                case 0:
+                  currentState = STATE_SETTINGS_PAGES;
+                  DisplayManager::showSettingsPages();
                   break;
-                }
-                case 1: { // Auto-Scroll
-                  // Tap checkbox area (155-190)
-                  if (startX >= 155 && startX <= 190) {
-                    autoScrollEnabled = !autoScrollEnabled;
-                    preferences.putBool("ascroll", autoScrollEnabled);
-                    if (autoScrollEnabled) lastAutoScrollTime = millis();
-                    DisplayManager::showSettings(false);
-                  }
-                  // Tap up arrow (increase interval)
-                  else if (autoScrollEnabled && startX >= 215 && startX <= 255 && startY < rowY + itemH/2 - 2) {
-                    if (autoScrollInterval < 30) {
-                      autoScrollInterval++;
-                      preferences.putUChar("asinterv", autoScrollInterval);
-                      DisplayManager::showSettings(false);
-                    }
-                  }
-                  // Tap down arrow (decrease interval)
-                  else if (autoScrollEnabled && startX >= 215 && startX <= 255 && startY > rowY + itemH/2 + 2) {
-                    if (autoScrollInterval > 1) {
-                      autoScrollInterval--;
-                      preferences.putUChar("asinterv", autoScrollInterval);
-                      DisplayManager::showSettings(false);
-                    }
-                  }
+                case 1:
+                  currentState = STATE_SETTINGS_AUTOSCROLL;
+                  DisplayManager::showSettingsAutoScroll();
                   break;
-                }
-                case 2: { // Car Type — open picker (Phase 4)
+                case 2:
                   // TODO: STATE_VEHICLE_PICKER
                   break;
-                }
-                case 3: { // Language — open picker (Phase 5)
+                case 3:
                   // TODO: STATE_LANGUAGE_PICKER
                   break;
-                }
               }
             }
           }
@@ -275,10 +238,95 @@ void TouchManager::processGestures() {
           currentState = STATE_MENU;
           DisplayManager::drawMenu();
         }
-
         touching = false;
         return;
       }
+
+      // === Settings sub-page: Pages ===
+      if (currentState == STATE_SETTINGS_PAGES) {
+        if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
+          // Back button
+          if (startY < 40 && startX < 80) {
+            currentState = STATE_SETTINGS;
+            DisplayManager::showSettings();
+          }
+          // Left arrow
+          else if (startX >= 50 && startX <= 90 && startY >= 85 && startY <= 135 && numPages > 1) {
+            numPages--;
+            if (currentPage >= numPages) currentPage = numPages - 1;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettingsPages(false);
+          }
+          // Right arrow
+          else if (startX >= 230 && startX <= 270 && startY >= 85 && startY <= 135 && numPages < MAX_PAGES) {
+            numPages++;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettingsPages(false);
+          }
+        }
+        // Swipe left/right on number
+        if (abs(deltaY) < 50 && abs(deltaX) > 60) {
+          if (deltaX > 60 && numPages > 1) {
+            numPages--;
+            if (currentPage >= numPages) currentPage = numPages - 1;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettingsPages(false);
+          } else if (deltaX < -60 && numPages < MAX_PAGES) {
+            numPages++;
+            preferences.putUChar("pages", numPages);
+            DisplayManager::showSettingsPages(false);
+          }
+        }
+        // Edge swipe back
+        if (startX < 30 && deltaX < -60) {
+          currentState = STATE_SETTINGS;
+          DisplayManager::showSettings();
+        }
+        touching = false;
+        return;
+      }
+
+      // === Settings sub-page: Auto-Scroll ===
+      if (currentState == STATE_SETTINGS_AUTOSCROLL) {
+        if (abs(deltaX) < 15 && abs(deltaY) < 15 && tapDuration < 500) {
+          // Back button
+          if (startY < 40 && startX < 80) {
+            currentState = STATE_SETTINGS;
+            DisplayManager::showSettings();
+          }
+          // Toggle ON/OFF (tap on ON/OFF text area)
+          else if (startY >= 50 && startY <= 90) {
+            autoScrollEnabled = !autoScrollEnabled;
+            preferences.putBool("ascroll", autoScrollEnabled);
+            if (autoScrollEnabled) lastAutoScrollTime = millis();
+            DisplayManager::showSettingsAutoScroll(false);
+          }
+          // Up arrow (increase interval)
+          else if (autoScrollEnabled && startX >= 200 && startX <= 240 && startY >= 95 && startY <= 115) {
+            if (autoScrollInterval < 30) {
+              autoScrollInterval++;
+              preferences.putUChar("asinterv", autoScrollInterval);
+              DisplayManager::showSettingsAutoScroll(false);
+            }
+          }
+          // Down arrow (decrease interval)
+          else if (autoScrollEnabled && startX >= 200 && startX <= 240 && startY >= 150 && startY <= 170) {
+            if (autoScrollInterval > 1) {
+              autoScrollInterval--;
+              preferences.putUChar("asinterv", autoScrollInterval);
+              DisplayManager::showSettingsAutoScroll(false);
+            }
+          }
+        }
+        // Edge swipe back
+        if (startX < 30 && deltaX < -60) {
+          currentState = STATE_SETTINGS;
+          DisplayManager::showSettings();
+        }
+        touching = false;
+        return;
+      }
+
 
       if (abs(deltaY) < 50 && tapDuration < 500) {
         if (deltaX > 80) {
