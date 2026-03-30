@@ -98,7 +98,7 @@ const char* const lang_EMPTY[]           = { "EMPTY",                "URES" };
 const char* const lang_paramNames[][LANG_COUNT] = {
   { "Battery SOH",    "Akku SOH" },       // 0
   { "Battery SOC",    "Akku SOC" },       // 1
-  { "Cabin Temp",     "Utaster hom." },   // 2
+  { "Cabin Temp",     "Belso hom." },   // 2
   { "Battery Temp",   "Akku hom." },      // 3
   { "AC Compressor",  "Klima kompr." },   // 4
   { "AC Pressure",    "Klima nyomas" },   // 5

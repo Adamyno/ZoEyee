@@ -287,6 +287,7 @@ static uint16_t colorDCPower(float v) {
 
 // Insulation resistance color: <50 green, 50-95 orange, >=95 red
 static uint16_t colorInsulation(float v) {
+  if (v >= 1000.0f) return 0x7BEF; // Grey for saturated/open circuit
   if (v < 50.0f) return 0x07E0;  // Green
   if (v < 95.0f) return 0xFD20;  // Orange
   return 0xF800;                  // Red
@@ -757,20 +758,29 @@ static void drawIconBatteryHV(Arduino_GFX *g, int cx, int cy, uint16_t color) {
   g->fillTriangle(cx - 2, cy + 1, cx + 6, cy + 1, cx - 4, cy + 16, bolt);
   g->fillRect(cx - 4, cy - 1, 8, 4, bolt);
 
-  // Voltage indicator bar at very bottom of battery
+  // Voltage fill level bar (proportional to Q210 Zoe range 300V-400V)
   int barX = bx + 4, barW = bw - 8;
   float voltage = obdHVBatVoltage;
+  if (voltage < 300.0f || voltage > 420.0f) return; // Out of range, no bar
+
+  // Map 300V-400V to 0-100%
+  float pct = (voltage - 300.0f) / 100.0f;
+  if (pct > 1.0f) pct = 1.0f;
+  if (pct < 0.0f) pct = 0.0f;
+
+  // Fill area inside battery body (bottom-up)
+  int maxFillH = bh - 10; // Leave room for terminal and border
+  int fillH = (int)(pct * maxFillH);
+  if (fillH < 2) fillH = 2;
+  int fillY = by + bh - 4 - fillH;
+
+  // Color based on percentage
   uint16_t barColor;
-  if (voltage >= 380.0f) {
-    barColor = 0x07E0; // Green
-  } else if (voltage >= 350.0f) {
-    barColor = 0xFD20; // Orange
-  } else if (voltage >= 320.0f) {
-    barColor = 0xF800; // Red
-  } else {
-    return; // No bar for < 320V
-  }
-  g->fillRect(barX, by + bh - 8, barW, 3, barColor);
+  if (pct >= 0.5f) barColor = 0x07E0;       // Green (>= 50% ~ 350V+)
+  else if (pct >= 0.2f) barColor = 0xFD20;   // Orange (>= 20% ~ 320V+)
+  else barColor = 0xF800;                    // Red (< 20% ~ < 320V)
+
+  g->fillRect(barX, fillY, barW, fillH, barColor);
 }
 
 // Power plug icon with "AC" text for AC Phase module
@@ -823,7 +833,7 @@ static DashParam dashParams[] = {
   {"",     "Max Charge",     "kW", -1,   false, 1, 0xFFE0, drawIconLightning,      colorWhite,       3},
   {"",     "DC Power",       "kW", -999, false, 1, 0x07FF, drawIconLightningDC,    colorDCPower,     0},
   {"",     "Avail Energy",   "kWh",-1,   false, 1, 0x07E0, drawIconBatteryKwh,     colorWhite,       0},
-  {"",     "HV Voltage",     "V",  -1,   false, 1, 0xFFE0, drawIconBatteryHV,      colorWhite,       0},
+  {"",     "HV Voltage",     "V",  -1,   true,  0, 0xFFE0, drawIconBatteryHV,      colorWhite,       0},
   {"",     "AC Phase",       "P",  -1,   true,  0, 0xFFE0, drawIconACPlug,         colorWhite,       0},
   {"",     "Insulation",     "\xEA", -1, true,  0, 0x07E0, drawIconGround,         colorInsulation,  0},
 };
@@ -880,6 +890,9 @@ static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
       if (mode == 1 || mode == 2) strcpy(buf, "COOL");
       else if (mode == 4) strcpy(buf, "HEAT");
       else strcpy(buf, "None");
+    } else if (param.getValueColor == colorInsulation && value >= 1000.0f) {
+      // Saturated / open circuit → show tilde as infinity approximation
+      strcpy(buf, "~");
     } else if (param.isInt) {
       snprintf(buf, sizeof(buf), "%d", (int)value);
     } else if (param.decimals >= 2) {
@@ -1125,13 +1138,13 @@ void DisplayManager::updateHomeOBD() {
 
     // HV Voltage icon: redraw when voltage level changes
     if (paramIdx == 16) {
-      static int prevVoltLevel = -1;
-      int curLevel = 0;
-      if (obdHVBatVoltage >= 380.0f) curLevel = 3;
-      else if (obdHVBatVoltage >= 350.0f) curLevel = 2;
-      else if (obdHVBatVoltage >= 320.0f) curLevel = 1;
-      if (curLevel != prevVoltLevel) {
-        prevVoltLevel = curLevel;
+      static int prevVoltPct = -1;
+      int curPct = 0;
+      if (obdHVBatVoltage >= 300.0f) {
+        curPct = (int)((obdHVBatVoltage - 300.0f) / 10.0f); // ~10V resolution
+      }
+      if (curPct != prevVoltPct) {
+        prevVoltPct = curPct;
         int cx = x0 + 22;
         int cy = y0 + 26;
         gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
