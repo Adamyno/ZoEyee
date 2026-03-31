@@ -928,9 +928,13 @@ static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
   }
 
   int totalW = valW + (unitW > 0 ? 4 + unitW : 0);
+  bool verticalUnit = (strlen(param.unit) >= 3 && unitW > 20); // Stack unit vertically for kWh, etc.
+  if (verticalUnit) {
+    totalW = valW; // Don't add unit width when stacking vertically
+  }
   
-  // Icon takes ~44px. Text area is from x=46 to x=156
-  int availStart = 50;
+  // Icon takes ~42px. Text area is from x=47 to x=157 (shifted 3px left)
+  int availStart = 47;
   int availW = 160 - availStart;
   int textX = x0 + availStart + (availW - totalW) / 2;
   
@@ -945,7 +949,19 @@ static void drawCellValue(Arduino_GFX *g, int x0, int y0, int cellH,
   g->print(buf);
 
   // Draw Unit
-  if (unitW > 0) {
+  if (verticalUnit) {
+    // Stack each letter vertically at the right edge of the cell
+    g->setFont(NULL); // Built-in 5x7 font for compact stacking
+    g->setTextColor(0xBDF7); // light grey
+    g->setTextSize(1);
+    int stackX = x0 + 160 - 8; // Right edge of cell
+    int stackY = y0 + 4;
+    for (int ci = 0; ci < (int)strlen(param.unit); ci++) {
+      g->setCursor(stackX, stackY + ci * 10);
+      char ch[2] = {param.unit[ci], 0};
+      g->print(ch);
+    }
+  } else if (unitW > 0) {
     int unitX = textX + valW + 4;
     g->setFont(&FreeSans9pt7b);
     g->setTextColor(0xBDF7); // light grey
@@ -976,7 +992,7 @@ void DisplayManager::showHome() {
     int row = i / cols;
     int x0 = col * cellW;
     int y0 = row * cellH;
-    int cx = x0 + 22;
+    int cx = x0 + 20;
     int cy = y0 + 26;
 
     const DashParam &p = dashParams[paramIdx];
@@ -1078,7 +1094,7 @@ void DisplayManager::updateHomeOBD() {
     int y0 = row * cellH;
 
     // Clear only the text area (right side of cell, sparing the icon area)
-    gfx->fillRect(x0 + 44, y0 + 2, cellW - 46, cellH - 4, BLACK);
+    gfx->fillRect(x0 + 42, y0 + 2, cellW - 44, cellH - 4, BLACK);
 
     // Redraw value + unit
     drawCellValue(gfx, x0, y0, cellH, dashParams[paramIdx], newVal);
@@ -1106,10 +1122,10 @@ void DisplayManager::updateHomeOBD() {
       if (!prevDCInit || nowCharging != prevDCCharging) {
         prevDCCharging = nowCharging;
         prevDCInit = true;
-        int cx = x0 + 22;
+        int cx = x0 + 20;
         int cy = y0 + 26;
         // Clear the icon area and redraw
-        gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
+        gfx->fillRect(x0, y0 + 1, 42, cellH - 2, BLACK);
         const DashParam &p = dashParams[paramIdx];
         if (p.drawIcon) {
           p.drawIcon(gfx, cx, cy, p.iconColor);
@@ -1126,9 +1142,9 @@ void DisplayManager::updateHomeOBD() {
       else if (obdAvailEnergy >= 3.0f) curLevel = 1;
       if (curLevel != prevBarLevel) {
         prevBarLevel = curLevel;
-        int cx = x0 + 22;
+        int cx = x0 + 20;
         int cy = y0 + 26;
-        gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
+        gfx->fillRect(x0, y0 + 1, 42, cellH - 2, BLACK);
         const DashParam &p = dashParams[paramIdx];
         if (p.drawIcon) {
           p.drawIcon(gfx, cx, cy, p.iconColor);
@@ -1145,9 +1161,9 @@ void DisplayManager::updateHomeOBD() {
       }
       if (curPct != prevVoltPct) {
         prevVoltPct = curPct;
-        int cx = x0 + 22;
+        int cx = x0 + 20;
         int cy = y0 + 26;
-        gfx->fillRect(x0, y0 + 1, 44, cellH - 2, BLACK);
+        gfx->fillRect(x0, y0 + 1, 42, cellH - 2, BLACK);
         const DashParam &p = dashParams[paramIdx];
         if (p.drawIcon) {
           p.drawIcon(gfx, cx, cy, p.iconColor);
